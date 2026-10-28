@@ -128,6 +128,7 @@ def run_case(construction, frame, style, bay_kinds, overrides = {})
   }
   conf.merge!(overrides)
   config = KeroCabinet.validate_config(conf)
+  case_depth = config['depth'] - config['back']
   model = MockModel.new
   Sketchup.active_model = model
   cabinet = MockEntities.new
@@ -144,27 +145,28 @@ def run_case(construction, frame, style, bay_kinds, overrides = {})
     raise "#{part.name} above height: #{max[2]}" if max[2] > config['height'] + 0.001
     raise "#{part.name} outside width" if min[0] < -0.001 || max[0] > config['width'] + 0.001
     if part.name == 'Back panel'
-      raise "Back outside expected depth" unless max[1] <= config['depth'] + config['back'] + 0.001
+      raise "Back outside expected depth" unless max[1] <= config['depth'] + 0.001
     else
-      raise "#{part.name} beyond back" if max[1] > config['depth'] + 0.001
+      raise "#{part.name} beyond back" if max[1] > case_depth + 0.001
     end
   end
   back = positions.fetch('Back panel')
   near(back[0][0], 0.0, 'External back covers entire case width (start)')
   near(back[1][0], config['width'], 'External back covers entire case width (end)')
-  near(back[0][1], config['depth'], 'External back starts beyond the carcass')
-  near(back[1][1], config['depth'] + config['back'], 'External back thickness')
+  near(back[0][1], case_depth, 'External back starts beyond the carcass')
+  near(back[1][1], config['depth'], 'Overall depth includes external back')
+  near(back[1][1] - back[0][1], config['back'], 'External back thickness')
   near(back[0][2], config['toe'], 'External back starts from case bottom')
   near(back[1][2], config['height'], 'External back extends to case top')
   leftside = positions.fetch('Left side')
   rightside = positions.fetch('Right side')
-  near(leftside[1][1], config['depth'], 'Left side extends to rear plane')
-  near(rightside[1][1], config['depth'], 'Right side extends to rear plane')
+  near(leftside[1][1], case_depth, 'Left side extends to rear plane')
+  near(rightside[1][1], case_depth, 'Right side extends to rear plane')
   top = positions.fetch('Top panel')
   bottom = positions.fetch('Bottom panel')
   near(top[1][2], config['height'], 'Top panel flush with cabinet top')
-  near(top[1][1], config['depth'], 'Top panel flush with rear edge of sides')
-  near(bottom[1][1], config['depth'], 'Bottom panel flush with rear edge of sides')
+  near(top[1][1], case_depth, 'Top panel flush with rear edge of sides')
+  near(bottom[1][1], case_depth, 'Bottom panel flush with rear edge of sides')
   near(bottom[0][2], config['toe'], 'Bottom panel at toe height')
   if construction == 'sides_full'
     near(leftside[0][2], config['toe'], 'Long sides start at top of toe')
@@ -179,7 +181,7 @@ def run_case(construction, frame, style, bay_kinds, overrides = {})
   end
   parts.each do |part|
     next unless part.name.include?('shelf') || part.name.include?('Divider')
-    near(part.bounds_mm[1][1], config['depth'], "#{part.name} must reach rear plane")
+    near(part.bounds_mm[1][1], case_depth, "#{part.name} must reach rear plane")
   end
   parts.select { |part| part.name.include?('internal shelf') }.each do |shelf|
     bay_number = shelf.name.split[1]
@@ -259,4 +261,6 @@ begin
 rescue ArgumentError => error
   raise unless error.message.include?('Toe kick height')
 end
-puts 'All 25 geometry configurations passed, including butt joints, frame clearance, legs, and inset shelves.'  
+run_case('sides_full', false, 'inset', ['door', 'open'], 'back' => 24)
+run_case('top_bottom_full', true, 'overlay', ['door'], 'back' => 3)
+puts 'All 27 geometry configurations passed, including butt joints, frame clearance, legs, and inset shelves.'  

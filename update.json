@@ -1,9 +1,9 @@
 {
   "schema": 1,
-  "version": "0.4.0",
+  "version": "0.4.1",
   "files": {
-    "kero_cabinet.rb": "48cf4d932f2e0de9e51751ed1a47bece793123e932dcfcca6ebc94873d4bb007",
-    "kero_cabinet/core.rb": "6baf790a82c62e80c373f5e3dfe7cf3a881cf2e6f3f0e634c6fef769c600366d",
+    "kero_cabinet.rb": "81b913d567bbac0a3b275d252913e0dc76a20e72d82aa9f93698ede84e25dfd8",
+    "kero_cabinet/core.rb": "0cc6b9b13fca479c15140f9a105b2718dcb90700ed4ab33ebccae95a6ef770be",
     "kero_cabinet/updater.rb": "fb2bcf913757fe95fe54e0081e4b778e22f8f3c499a5dceab2d9cbfda541d3bd"
   }
 }

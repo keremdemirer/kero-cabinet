@@ -1,5 +1,5 @@
 # frozen_string_literal: true
-# Kero Cabinet v0.4.0, SketchUp 2020+; all design inputs use millimetres.
+# Kero Cabinet v0.4.1, SketchUp 2020+; all design inputs use millimetres.
 require 'sketchup.rb'
 require 'json'
 require_relative 'updater'
@@ -8,7 +8,7 @@ module KeroCabinet
   extend self
 
   DICT = 'kero_cabinet'.freeze
-  VERSION = '0.4.0'.freeze
+  VERSION = '0.4.1'.freeze
 
   DEFAULT = {
     'name' => 'Parametric Cabinet',
@@ -127,7 +127,7 @@ module KeroCabinet
       raise ArgumentError, 'Height is insufficient for the toe kick and top/bottom sections.'
     end
     frame_depth = c['frame'] ? c['frame_depth'] : 0.0
-    if c['depth'] - frame_depth < 190
+    if c['depth'] - c['back'] - frame_depth < 190
       raise ArgumentError, 'Case depth is too small.'
     end
     unless c['bays'].is_a?(Array) && c['bays'].length.between?(1, 6)
@@ -199,6 +199,7 @@ module KeroCabinet
 
   def generate_parts(entities, c, model)
     w, h, d = c.values_at('width', 'height', 'depth')
+    d -= c['back'] # Input depth includes the externally applied back panel.
     t, bt, ft, toe = c.values_at('panel', 'back', 'front', 'toe')
     face_frame = c['frame']
     fw = face_frame ? c['frame_width'] : 0.0
@@ -211,7 +212,7 @@ module KeroCabinet
 
     # Carcass construction. The selected full-length direction also determines
     # the physical size of the panels, not merely a visual highlight.
-    # Width/depth of the structural carcass is independent of the back panel.
+    # The back thickness is reserved within the requested overall depth.
     # The back is applied OUTSIDE the carcass, not captured between its parts.
     # This also keeps top and bottom flush with the rear edge of the side panels.
     depth_inside = d - fd
@@ -351,6 +352,7 @@ module KeroCabinet
   # At the default 100 mm toe height the upright 100 mm timbers sit on the floor.
   def generate_toe_frame(add, c, bounds, front_offset)
     w, d, toe = c.values_at('width', 'depth', 'toe')
+    d -= c['back']
     height, thickness = c.values_at('timber_height', 'timber_thickness')
     recess = [65.0, (d - front_offset) / 3.0].min
     front_y = front_offset + recess + c['panel']
@@ -473,7 +475,7 @@ module KeroCabinet
       </style>
       </head>
       <body>
-      <header><h1>Kero Cabinet</h1><p>Parametric SketchUp cabinet builder - v0.4.0</p></header>
+      <header><h1>Kero Cabinet</h1><p>Parametric SketchUp cabinet builder - v0.4.1</p></header>
       <main>
         <section class="section">
           <h2>Case dimensions</h2>
@@ -481,14 +483,14 @@ module KeroCabinet
             <div><label for="name">Component name</label><input id="name" type="text" style="min-width:0"></div>
             <div><label for="width">Width (mm)</label><input id="width" type="number" step="1"></div>
             <div><label for="height">Height (mm)</label><input id="height" type="number" step="1"></div>
-            <div><label for="depth">Depth (mm)</label><input id="depth" type="number" step="1"></div>
+            <div><label for="depth">Depth incl. back (mm)</label><input id="depth" type="number" step="1"></div>
             <div><label for="panel">Case panel (mm)</label><input id="panel" type="number" step="1"></div>
             <div><label for="back">Back panel (mm)</label><input id="back" type="number" step="1"></div>
             <div><label for="front">Door/front thickness (mm)</label><input id="front" type="number" step="1"></div>
             <div><label for="toe">Toe kick height (mm)</label><input id="toe" type="number" step="1"></div>
             <div><label for="gap">Front gap (mm)</label><input id="gap" type="number" step="0.5"></div>
           </div>
-          <p class="hint">Depth is measured to the rear edge of the case. The external back adds its thickness; front thickness is excluded. Enter the total height including the toe kick.</p>
+          <p class="hint">Depth includes the external back panel. The case is shortened by the back thickness; overlay fronts project forward separately. Enter the total height including the toe kick.</p>
         </section>
         <section class="section">
           <h2>Toe kick support frame</h2>

@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.4.1 - 2026-10-28
+- Include the externally applied back panel within the requested overall depth.
+- Shorten case panels, shelves, drawer boxes, and the toe frame accordingly.
+- Clarify the depth label and document changed depth semantics for existing cabinets.
+- Check overall depth with 3, 6, and 24 mm backs across 27 geometry configurations.
+
 ## v0.4.0 - 2026-10-28
 - Add a toe kick timber support frame, enabled by default with 50 x 100 mm stock, 100 mm upright.
 - Use butt-jointed perimeter and cross rails behind the toe kick front, plus legs for taller toe spaces.
