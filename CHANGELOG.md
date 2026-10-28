@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.8.3 - 2026-10-28
+- Clip each drawer box to its own front interval and section cavity before applying hardware clearances.
+- Prevent overlay boxes from shifting into adjacent drawers when Fit available height is selected.
+- Verify per-drawer intervals and separation for 2/4 drawers, both height modes, frame choices and three hardware profiles.
+
 ## v0.8.2 - 2026-10-28
 - Add Fit available height (default) and Limit height drawer box modes with a configurable cap, initially 125 mm.
 - Preserve front dimensions and hardware clearances while allowing taller boxes.

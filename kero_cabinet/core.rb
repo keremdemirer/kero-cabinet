@@ -1,5 +1,5 @@
 # frozen_string_literal: true
-# Kero Cabinet v0.8.2, SketchUp 2020+; all design inputs use millimetres.
+# Kero Cabinet v0.8.3, SketchUp 2020+; all design inputs use millimetres.
 require 'sketchup.rb'
 require 'json'
 require_relative 'updater'
@@ -8,7 +8,7 @@ module KeroCabinet
   extend self
 
   DICT = 'kero_cabinet'.freeze
-  VERSION = '0.8.2'.freeze
+  VERSION = '0.8.3'.freeze
 
   DEFAULT = {
     'name' => 'Parametric Cabinet',
@@ -507,15 +507,19 @@ module KeroCabinet
           upper_clearance = undermount ? 6.0 : 4.0
           allowance = lower_clearance + upper_clearance
           recess = undermount ? 13.0 : 0.0
-          dbh = [cell - allowance, cavity_top - cavity_bottom - allowance].min
+          # Clip each box to its own front interval before applying clearance.
+          # Overlay fronts extend beyond the case, so moving an already-sized
+          # box inward can otherwise push it into the next drawer.
+          box_lower = [z_front, cavity_bottom].max + lower_clearance
+          box_upper = [z_front + cell, cavity_top].min - upper_clearance
+          dbh = box_upper - box_lower
           if c['drawer_height_mode'] == 'limit'
             if c['drawer_height_limit'] < required_box
               raise ArgumentError, "Drawer height limit #{c['drawer_height_limit']} mm is below the selected hardware/stock minimum of #{required_box.round(1)} mm. Increase the limit or choose Fit available height."
             end
             dbh = [dbh, c['drawer_height_limit']].min
           end
-          wanted_z = undermount ? z_front + lower_clearance : z_front + (cell-dbh)/2
-          dbz = [[wanted_z, cavity_bottom + lower_clearance].max, cavity_top - dbh - upper_clearance].min
+          dbz = undermount ? box_lower : box_lower + (box_upper - box_lower - dbh) / 2
           raise ArgumentError, 'Insufficient internal space for the drawer box.' if dbw < 80 || dbd < 100 || dbh + 0.001 < required_box
           if dbw - 2*dt <= 0.25 || dbd - 2*dt <= 0.25 || dbh - recess - bottom_t <= 0.25
             raise ArgumentError, 'Drawer stock is too thick for the available box dimensions.'
@@ -670,7 +674,7 @@ module KeroCabinet
       </style>
       </head>
       <body>
-      <header><h1>Kero Cabinet</h1><p>Parametric SketchUp cabinet builder - v0.8.2</p></header>
+      <header><h1>Kero Cabinet</h1><p>Parametric SketchUp cabinet builder - v0.8.3</p></header>
       <main>
         <section class="section">
           <h2>Case dimensions</h2>
