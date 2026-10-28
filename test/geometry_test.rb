@@ -8,9 +8,18 @@ end
 Z_AXIS = Object.new
 module Geom
   class Transformation
-    attr_reader :origin
-    def initialize(origin)
-      @origin = origin
+    attr_reader :origin, :scale
+    def initialize(origin = [0,0,0], scale = [1,1,1])
+      @origin, @scale = origin, scale
+    end
+    def self.scaling(x, y, z)
+      new([0,0,0], [x,y,z])
+    end
+    def *(other)
+      self.class.new(@origin.zip(other.origin, @scale).map { |a,b,scale| a+b*scale }, @scale.zip(other.scale).map { |a,b| a*b })
+    end
+    def to_a
+      [@scale[0],0,0,0, 0,@scale[1],0,0, 0,0,@scale[2],0, *@origin,1]
     end
   end
 end
@@ -63,12 +72,22 @@ end
 class MockDef
   attr_accessor :description, :name, :points, :extrusion
   attr_reader :entities
+  def get_attribute(dict, key)
+    (@attributes || {})[[dict,key]]
+  end
+  def set_attribute(dict, key, value)
+    (@attributes ||= {})[[dict,key]] = value
+  end
   def initialize(name)
     @name = name
     @entities = MockEntities.new(self)
   end
 end
 class MockDefinitions
+  include Enumerable
+  def each(&block)
+    @all.each(&block)
+  end
   attr_reader :all
   def initialize
     @all = []
@@ -80,6 +99,9 @@ class MockDefinitions
   end
 end
 class MockInstance
+  def set_attribute(dict, key, value)
+    (@attributes ||= {})[[dict,key]] = value
+  end
   attr_accessor :name, :material
   attr_reader :definition, :transformation
   def initialize(definition, transformation)
@@ -88,9 +110,9 @@ class MockInstance
   end
   def bounds_mm
     o = @transformation.origin.map { |a| a*25.4 }
-    x = @definition.points.map { |p| p[0] }.max * 25.4
-    y = @definition.points.map { |p| p[1] }.max * 25.4
-    z = @definition.extrusion * 25.4
+    x = @definition.points.map { |p| p[0] }.max * 25.4 * @transformation.scale[0]
+    y = @definition.points.map { |p| p[1] }.max * 25.4 * @transformation.scale[1]
+    z = @definition.extrusion * 25.4 * @transformation.scale[2]
     [o, [o[0]+x, o[1]+y, o[2]+z]]
   end
 end
@@ -102,7 +124,7 @@ class MockMaterials
     @by_name[name]
   end
   def add(name)
-    @by_name[name] = Struct.new(:color).new
+    @by_name[name] = Struct.new(:color, :name).new(nil, name)
   end
 end
 class MockModel

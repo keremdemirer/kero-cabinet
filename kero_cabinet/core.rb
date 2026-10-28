@@ -1,5 +1,5 @@
 # frozen_string_literal: true
-# Kero Cabinet v0.9.0, SketchUp 2020+; all design inputs use millimetres.
+# Kero Cabinet v0.10.0, SketchUp 2020+; all design inputs use millimetres.
 require 'sketchup.rb'
 require 'json'
 require_relative 'updater'
@@ -9,7 +9,7 @@ module KeroCabinet
 
   %i[DICT VERSION DEFAULT DRAWER_SLIDES].each { |name| remove_const(name) if const_defined?(name, false) }
   DICT = 'kero_cabinet'.freeze
-  VERSION = '0.9.0'.freeze
+  VERSION = '0.10.0'.freeze
 
   DEFAULT = {
     'name' => 'Parametric Cabinet',
@@ -281,51 +281,77 @@ module KeroCabinet
     integer_between!(item, 'shelves', 0, 8)
   end
 
-  def materials(model)
-    colors = {
-      'Case' => [214, 179, 130],
-      'Back panel' => [198, 168, 130],
-      'Face frame' => [141, 99, 66],
-      'Door / drawer front' => [183, 137, 93],
-      'Drawer box' => [227, 204, 161],
-      'Toe kick timber' => [196, 159, 106]
-    }
-    colors.each_with_object({}) do |(name, rgb), h|
-      material_name = "KC | #{name}"
-      material = model.materials[material_name] || model.materials.add(material_name)
-      material.color = Sketchup::Color.new(*rgb)
-      h[name] = material
+  def stock_number(value)
+    value.to_f.round(4).to_s.sub(/\.0+\z/, '')
+  end
+
+  def part_stock(name, role, c)
+    if role == 'Toe kick timber' || role == 'Face frame'
+      sizes = role == 'Toe kick timber' ? c.values_at('timber_thickness', 'timber_height') : c.values_at('frame_depth', 'frame_width')
+      a, b = sizes.sort
+      { name: "#{stock_number(a)} x #{stock_number(b)} mm Timber", base: [1.0, a, b], type: 'timber' }
+    else
+      thickness = case role
+      when 'Back panel' then c['back']
+      when 'Door / drawer front' then c['front']
+      when 'Drawer box' then name.end_with?(' bottom') ? c['drawer_bottom'] : c['drawer_thickness']
+      else c['panel']
+      end
+      { name: "#{stock_number(thickness)} mm Sheet", base: [1.0, 1.0, thickness], type: 'sheet' }
     end
   end
 
-  # Each individual wooden part is a solid SketchUp ComponentInstance.
-  # OpenCutList reads components, not groups. Coordinates and dimensions use mm.
-  # x = width, y = depth (front is y = 0), z = height.
-  def box(entities, name, material_name, x, y, z, sx, sy, sz, palette)
+  # One owned definition per stock; dimensions belong to each scaled instance.
+  # CutList 4.1.12 multiplies definition bounds by instance axis scales.
+  def box(entities, name, stock, x, y, z, sx, sy, sz, cache)
     dims = [sx, sy, sz]
     return if dims.any? { |v| v <= 0.25 }
-
     model = Sketchup.active_model
-    definition = model.definitions.add("KC | #{name}")
-    dx, dy, dz = dims.map { |v| mm(v) }
-    points = [
-      [0, 0, 0], [dx, 0, 0],
-      [dx, dy, 0], [0, dy, 0]
-    ]
-    face = definition.entities.add_face(points)
-    raise "Could not create face: #{name}" unless face
-    # SketchUp forcibly orients faces drawn on the component's Z=0 ground plane
-    # downwards, regardless of vertex winding. pushpull follows the face normal.
-    # Always reverse a downward-facing face before extruding a positive height.
-    face.reverse! unless face.normal.samedirection?(Z_AXIS)
-    face.pushpull(dz)
-    definition.description = name
-
-    origin = [x, y, z].map { |v| mm(v) }
-    instance = entities.add_instance(definition, Geom::Transformation.new(origin))
+    key = "stock-v1:#{stock[:name]}"
+    entry = cache[key]
+    unless entry
+      definition = model.definitions.find { |item| item.get_attribute(DICT, 'stock_key') == key }
+      unless definition
+        definition = model.definitions.add(stock[:name])
+        dx, dy, dz = stock[:base].map { |v| mm(v) }
+        face = definition.entities.add_face([[0,0,0], [dx,0,0], [dx,dy,0], [0,dy,0]])
+        raise "Could not create stock component: #{stock[:name]}" unless face
+        face.reverse! unless face.normal.samedirection?(Z_AXIS)
+        face.pushpull(dz)
+        definition.description = "Kero Cabinet shared #{stock[:type]} stock. Dimensions are set on instances."
+        definition.set_attribute(DICT, 'stock_key', key)
+      end
+      material = model.materials[stock[:name]]
+      unless material
+        material = model.materials.add(stock[:name])
+        material.color = Sketchup::Color.new(*(stock[:type] == 'sheet' ? [214,179,130] : [196,159,106]))
+      end
+      entry = cache[key] = [definition, material]
+    end
+    definition, material = entry
+    scale = dims.zip(stock[:base]).map { |actual, base| actual.to_f / base }
+    transform = Geom::Transformation.new([x,y,z].map { |v| mm(v) }) * Geom::Transformation.scaling(*scale)
+    instance = entities.add_instance(definition, transform)
     instance.name = name
-    instance.material = palette[material_name]
+    instance.material = material
+    instance.set_attribute(DICT, 'part_name', name)
     instance
+  end
+
+  def obsolete_part_definitions(entities)
+    entities.grep(Sketchup::ComponentInstance).map do |part|
+      definition = part.definition
+      owned = definition.get_attribute(DICT, 'stock_key') ||
+        (definition.name.start_with?('KC | ') && definition.description == part.name)
+      definition if owned
+    end.compact.uniq
+  end
+
+  def remove_unused_part_definitions(model, candidates)
+    candidates.each do |definition|
+      next unless definition.valid? && definition.instances.empty?
+      model.definitions.remove(definition)
+    end
   end
 
   def generate_parts(entities, c, model)
@@ -336,9 +362,9 @@ module KeroCabinet
     fw = face_frame ? c['frame_width'] : 0.0
     fd = face_frame ? c['frame_depth'] : 0.0
     g = c['gap']
-    palette = materials(model)
+    palette = {}
     add = lambda do |name, material, x, y, z, sx, sy, sz|
-      box(entities, name, material, x, y, z, sx, sy, sz, palette)
+      box(entities, name, part_stock(name, material, c), x, y, z, sx, sy, sz, palette)
     end
 
     # Carcass construction. The selected full-length direction also determines
@@ -614,10 +640,12 @@ module KeroCabinet
     model = Sketchup.active_model
     model.start_operation(instance ? 'Edit Kero Cabinet' : 'Create Kero Cabinet', true)
     begin
+      obsolete = []
       if instance && instance.valid?
         raise 'The selected object is no longer available.' unless instance.is_a?(Sketchup::ComponentInstance)
         instance.make_unique
         definition = instance.definition
+        obsolete = obsolete_part_definitions(definition.entities)
         definition.entities.clear!
       else
         definition = model.definitions.add(c['name'])
@@ -631,6 +659,7 @@ module KeroCabinet
       instance.set_attribute(DICT, 'version', VERSION)
       model.selection.clear
       model.selection.add(instance)
+      remove_unused_part_definitions(model, obsolete)
       model.commit_operation
     rescue StandardError
       model.abort_operation
@@ -693,7 +722,7 @@ module KeroCabinet
       </style>
       </head>
       <body>
-      <header><h1>Kero Cabinet</h1><p>Parametric SketchUp cabinet builder - v0.9.0</p></header>
+      <header><h1>Kero Cabinet</h1><p>Parametric SketchUp cabinet builder - v0.10.0</p></header>
       <main>
         <section class="section">
           <h2>Case dimensions</h2>

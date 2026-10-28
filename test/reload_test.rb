@@ -39,9 +39,9 @@ class ReloadTest < Minitest::Test
     definition_count = model.definitions.all.length
     editor = Editor.new
     KeroCabinet.instance_variable_set(:@dialogs, [editor])
-    assert U.reload_plugin('0.9.0')
+    assert U.reload_plugin(KeroCabinet::VERSION)
     registered_count = UI.menu('Plugins').items.length
-    assert U.reload_plugin('0.9.0')
+    assert U.reload_plugin(KeroCabinet::VERSION)
     assert_same original_module, KeroCabinet
     assert editor.closed
     assert_empty KeroCabinet.instance_variable_get(:@dialogs)
@@ -64,7 +64,7 @@ class ReloadTest < Minitest::Test
     KeroCabinet.send(:remove_method, :close_editors_for_reload)
     editor = Editor.new
     KeroCabinet.instance_variable_set(:@dialogs, [editor])
-    assert U.reload_plugin('0.9.0')
+    assert U.reload_plugin(KeroCabinet::VERSION)
     assert editor.closed
   ensure
     KeroCabinet.send(:define_method, :close_editors_for_reload, old) unless KeroCabinet.respond_to?(:close_editors_for_reload)

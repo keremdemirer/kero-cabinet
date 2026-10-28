@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.10.0 - 2026-10-28
+- Share owned stock component definitions across scaled part instances and cabinets, with thickness-based Sheet materials and dimensional Timber materials.
+- Preserve per-instance role names and real geometry, and classify sheets using default CutList material words.
+- Remove only unused candidate definitions from an edited cabinet, retaining shared or unrelated definitions.
+- Verify geometry regressions and integrate against original installed CutList v4.1.12 measurement/classification code.
+- Document stock-name descriptions in CutList and the remaining full-UI export verification step.
+
 ## v0.9.0 - 2026-10-28
 - Reload installed plugin code automatically after updates without restarting SketchUp.
 - Close cabinet editors with update consent, preserve live module/menu callbacks, and avoid duplicate menu registration.
