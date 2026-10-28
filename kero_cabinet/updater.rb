@@ -11,6 +11,7 @@ require 'thread'
 module KeroCabinet
   module Updater
     extend self
+    %i[REPOSITORY FILES ROOT].each { |name| remove_const(name) if const_defined?(name, false) }
     REPOSITORY = 'keremdemirer/kero-cabinet'.freeze
     FILES = %w[kero_cabinet.rb kero_cabinet/core.rb kero_cabinet/updater.rb].freeze
     ROOT = File.expand_path('..', __dir__).freeze
@@ -228,8 +229,55 @@ module KeroCabinet
       end
     end
 
+    # Reload methods into the existing module so existing menu callbacks keep
+    # resolving the current implementations. Never clear the loaded-file registry.
+    def reload_plugin(expected_version = nil)
+      raise UpdateError, 'An update operation is still running. Try again when it finishes.' if @busy
+      files = [File.join(ROOT, 'kero_cabinet/updater.rb'), File.join(ROOT, 'kero_cabinet/core.rb')]
+      if defined?(RubyVM::InstructionSequence)
+        files.each { |path| RubyVM::InstructionSequence.compile_file(path) }
+      end
+      if KeroCabinet.respond_to?(:close_editors_for_reload)
+        KeroCabinet.close_editors_for_reload
+      else
+        (KeroCabinet.instance_variable_get(:@dialogs) || []).dup.each(&:close)
+        KeroCabinet.instance_variable_set(:@dialogs, [])
+      end
+      files.each { |path| Kernel.load(path) }
+      if expected_version && KeroCabinet::VERSION != expected_version
+        raise UpdateError, 'The installed and loaded versions differ. Restart SketchUp to complete the update.'
+      end
+      @restart_required = false
+      true
+    rescue StandardError, ScriptError => error
+      @restart_required = true
+      raise UpdateError, "Files are installed, but live reload failed (#{error.class}). Save your model and restart SketchUp to finish loading them."
+    end
+
+    def reload_from_menu
+      return UI.messagebox('An update operation is still running. Try again when it finishes.') if @busy
+      if KeroCabinet.editors_open?
+        answer = UI.messagebox('Reloading closes Kero Cabinet editors and discards unapplied editor changes. Continue?', MB_YESNO)
+        return unless answer == IDYES
+      end
+      defer_reload
+    end
+
+    def defer_reload(expected_version = nil)
+      timer = UI.start_timer(0.1, true) do
+        UI.stop_timer(timer)
+        begin
+          reload_plugin(expected_version)
+          UI.messagebox("Kero Cabinet #{KeroCabinet::VERSION} is active. No SketchUp restart is needed. Reopen the cabinet editor to use the new version.")
+        rescue UpdateError => error
+          UI.messagebox(error.message)
+        end
+      end
+    end
+
     def check(silent = false)
-      return if @restart_required || @busy
+      return if @busy
+      return reload_from_menu if @restart_required
       background(lambda { find_update }) do |status, update|
         if status == :error
           UI.messagebox(update) unless silent
@@ -237,7 +285,7 @@ module KeroCabinet
           UI.messagebox("Kero Cabinet #{KeroCabinet::VERSION} is up to date.") unless silent
         else
           version = update['manifest']['version']
-          answer = UI.messagebox("Kero Cabinet #{version} is available. Download and install it now?\n\nRestart SketchUp after installation to use the new version.", MB_YESNO)
+          answer = UI.messagebox("Kero Cabinet #{version} is available. Download and install it now?\n\nThe plugin will reload after installation. Open Kero Cabinet editors will close and unapplied editor changes will be discarded. Your model will not be regenerated.", MB_YESNO)
           next unless answer == IDYES
           background(lambda { download(update) }) do |download_status, files|
             if download_status == :error
@@ -246,8 +294,7 @@ module KeroCabinet
             end
             begin
               install(files)
-              @restart_required = true
-              UI.messagebox("Kero Cabinet #{version} was installed. Save your work and restart SketchUp. No RBZ installation is needed.")
+              defer_reload(version)
             rescue StandardError => error
               UI.messagebox(error.is_a?(UpdateError) ? error.message : 'Installation failed. Check folder permissions and try again.')
             end

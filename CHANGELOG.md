@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.9.0 - 2026-10-28
+- Reload installed plugin code automatically after updates without restarting SketchUp.
+- Close cabinet editors with update consent, preserve live module/menu callbacks, and avoid duplicate menu registration.
+- Add a manual reload command, first-upgrade console activation, and explicit restart fallback on reload failure.
+- Verify repeat reloads, unchanged mock model state, old-core transition and failure reporting.
+
 ## v0.8.4 - 2026-10-28
 - Use a shared gap-centered front grid for overlay stacked section boundaries and uniform drawer fronts.
 - Align a 1:3 bottom drawer/upper door layout with the bottom of a four-drawer bank.

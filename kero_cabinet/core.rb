@@ -1,5 +1,5 @@
 # frozen_string_literal: true
-# Kero Cabinet v0.8.4, SketchUp 2020+; all design inputs use millimetres.
+# Kero Cabinet v0.9.0, SketchUp 2020+; all design inputs use millimetres.
 require 'sketchup.rb'
 require 'json'
 require_relative 'updater'
@@ -7,8 +7,9 @@ require_relative 'updater'
 module KeroCabinet
   extend self
 
+  %i[DICT VERSION DEFAULT DRAWER_SLIDES].each { |name| remove_const(name) if const_defined?(name, false) }
   DICT = 'kero_cabinet'.freeze
-  VERSION = '0.8.4'.freeze
+  VERSION = '0.9.0'.freeze
 
   DEFAULT = {
     'name' => 'Parametric Cabinet',
@@ -51,6 +52,15 @@ module KeroCabinet
 
   def mm(number)
     number.to_f / 25.4
+  end
+
+  def editors_open?
+    @dialogs && !@dialogs.empty?
+  end
+
+  def close_editors_for_reload
+    (@dialogs || []).dup.each(&:close)
+    @dialogs = []
   end
 
   def show_dialog(instance = nil)
@@ -683,7 +693,7 @@ module KeroCabinet
       </style>
       </head>
       <body>
-      <header><h1>Kero Cabinet</h1><p>Parametric SketchUp cabinet builder - v0.8.4</p></header>
+      <header><h1>Kero Cabinet</h1><p>Parametric SketchUp cabinet builder - v0.9.0</p></header>
       <main>
         <section class="section">
           <h2>Case dimensions</h2>
@@ -898,6 +908,7 @@ module KeroCabinet
 
   unless file_loaded?(__FILE__)
     menu = UI.menu('Plugins').add_submenu('Kero Cabinet')
+    @menu = menu
     menu.add_item('Create new cabinet...') { show_dialog }
     menu.add_item('Edit selected cabinet...') { edit_selected }
     menu.add_separator
@@ -913,4 +924,12 @@ module KeroCabinet
     end
     file_loaded(__FILE__)
   end
+  # Older live sessions did not retain their submenu. Add a root command once
+  # during the transition; subsequent reloads keep the same registration.
+  if defined?(UI) && UI.respond_to?(:menu) && !@reload_command_registered
+    reload_menu = @menu || UI.menu('Plugins')
+    reload_menu.add_item(@menu ? 'Reload plugin now...' : 'Kero Cabinet | Reload plugin now...') { Updater.reload_from_menu }
+    @reload_command_registered = true
+  end
+
 end
