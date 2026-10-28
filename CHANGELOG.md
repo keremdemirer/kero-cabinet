@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.12.1 - 2026-10-28
+- Include integrated worktop thickness within Overall height.
+- Shorten case panels, backs, dividers, fronts and interior layouts consistently, and validate available case height after the deduction.
+- Preserve independent-worktop behavior and test multiple top thicknesses/construction modes.
+
 ## v0.12.0 - 2026-10-28
 - Add optional per-cabinet worktops with 30 mm MDF defaults and separate material/thickness/overhang controls.
 - Regenerate integrated tops with their cabinet dimensions and preserve shared Worktop Sheet stock definitions.

@@ -65,8 +65,8 @@ class WorktopTest < Minitest::Test
       assert_in_delta c['width']+10, high[0], 0.001
       assert_in_delta -KeroCabinet.overlay_projection(c)-20, low[1], 0.001
       assert_in_delta c['depth']+20, high[1]-low[1], 0.001
-      assert_in_delta c['height'], low[2], 0.001
-      assert_in_delta c['height']+30, high[2], 0.001
+      assert_in_delta c['height']-30, low[2], 0.001
+      assert_in_delta c['height'], high[2], 0.001
       assert_equal '30 mm MDF Worktop Sheet', top.material.name
       c['width'] = 1800
       c['height'] = 950
@@ -75,11 +75,32 @@ class WorktopTest < Minitest::Test
       changed = next_entities.instances.find { |part| part.name == 'Cabinet worktop' }
       assert_same top.definition, changed.definition
       assert_in_delta 1815, changed.bounds_mm[1][0]-changed.bounds_mm[0][0], 0.001
-      assert_in_delta 950, changed.bounds_mm[0][2], 0.001
+      assert_in_delta 920, changed.bounds_mm[0][2], 0.001
       c['worktop'] = false
       disabled = MockEntities.new
       KeroCabinet.generate_parts(disabled, c, model)
       refute disabled.instances.any? { |part| part.name == 'Cabinet worktop' }
+    end
+  end
+
+  def test_integrated_top_preserves_overall_height_and_reduces_internal_case
+    [6,30,60].product(%w[sides_full top_bottom_full], %w[full rails]).each do |thickness, construction, top|
+      c = KeroCabinet.validate_config(KeroCabinet.clone_defaults.merge('worktop' => true,
+        'worktop_thickness' => thickness, 'construction' => construction, 'top_construction' => top))
+      model = MockModel.new
+      Sketchup.active_model = model
+      entities = MockEntities.new
+      KeroCabinet.generate_parts(entities, c, model)
+      worktop = entities.instances.find { |part| part.name == 'Cabinet worktop' }
+      assert_in_delta c['height'], worktop.bounds_mm[1][2], 0.001
+      assert_in_delta c['height']-thickness, worktop.bounds_mm[0][2], 0.001
+      entities.instances.reject { |part| part.equal?(worktop) }.each do |part|
+        assert_operator part.bounds_mm[1][2], :<=, c['height']-thickness+0.001, part.name
+      end
+    end
+    assert_raises(ArgumentError) do
+      KeroCabinet.validate_config(KeroCabinet.clone_defaults.merge('worktop' => true,
+        'worktop_thickness' => 100, 'height' => 350, 'toe' => 250))
     end
   end
 

@@ -1,5 +1,5 @@
 # frozen_string_literal: true
-# Kero Cabinet v0.12.0, SketchUp 2020+; all design inputs use millimetres.
+# Kero Cabinet v0.12.1, SketchUp 2020+; all design inputs use millimetres.
 require 'sketchup.rb'
 require 'json'
 require_relative 'updater'
@@ -9,7 +9,7 @@ module KeroCabinet
 
   %i[DICT VERSION DEFAULT DRAWER_SLIDES].each { |name| remove_const(name) if const_defined?(name, false) }
   DICT = 'kero_cabinet'.freeze
-  VERSION = '0.12.0'.freeze
+  VERSION = '0.12.1'.freeze
 
   DEFAULT = {
     'name' => 'Parametric Cabinet',
@@ -169,6 +169,10 @@ module KeroCabinet
     length
   end
 
+  def case_height(c)
+    c['height'] - (c['worktop'] ? c['worktop_thickness'] : 0)
+  end
+
   def overlay_projection(c)
     return 0 unless c['style'] == 'overlay' && c['bays'].is_a?(Array)
     fronts = c['bays'].any? do |bay|
@@ -242,7 +246,7 @@ module KeroCabinet
     c['frame'] = (c['frame'] == true)
     c['style'] = c['style'].to_s
     raise ArgumentError, 'Door style must be inset or overlay.' unless %w[inset overlay].include?(c['style'])
-    if c['toe'] + 2 * [c['panel'], (c['frame'] ? c['frame_width'] : 0)].max >= c['height']
+    if c['toe'] + 2 * [c['panel'], (c['frame'] ? c['frame_width'] : 0)].max >= case_height(c)
       raise ArgumentError, 'Height is insufficient for the toe kick and top/bottom sections.'
     end
     frame_depth = c['frame'] ? c['frame_depth'] : 0.0
@@ -254,7 +258,7 @@ module KeroCabinet
     if c['top_construction'] == 'rails' && rear_limit - frame_depth <= 2 * c['rail_width']
       raise ArgumentError, 'Top support rails need more depth or a smaller rail width.'
     end
-    if c['back_construction'] == 'rails' && c['height'] - c['toe'] - 2 * c['panel'] <= 2 * c['rail_width']
+    if c['back_construction'] == 'rails' && case_height(c) - c['toe'] - 2 * c['panel'] <= 2 * c['rail_width']
       raise ArgumentError, 'Back support rails need more height or a smaller rail width.'
     end
     unless c['bays'].is_a?(Array) && c['bays'].length.between?(1, 6)
@@ -370,6 +374,7 @@ module KeroCabinet
 
   def generate_parts(entities, c, model)
     w, h, d = c.values_at('width', 'height', 'depth')
+    h = case_height(c)
     d = case_depth(c)
     t, bt, ft, toe = c.values_at('panel', 'back', 'front', 'toe')
     face_frame = c['frame']
@@ -740,7 +745,7 @@ module KeroCabinet
   def cabinet_worktop_config(c)
     { 'name' => 'Cabinet worktop', 'material' => c['worktop_material'],
       'thickness' => c['worktop_thickness'], 'x' => 0, 'y' => -overlay_projection(c),
-      'z' => c['height'], 'width' => c['width'], 'depth' => c['depth'],
+      'z' => case_height(c), 'width' => c['width'], 'depth' => c['depth'],
       'front_overhang' => c['worktop_front_overhang'], 'rear_overhang' => c['worktop_rear_overhang'],
       'left_overhang' => c['worktop_left_overhang'], 'right_overhang' => c['worktop_right_overhang'] }
   end
@@ -853,21 +858,21 @@ module KeroCabinet
       </style>
       </head>
       <body>
-      <header><h1>Kero Cabinet</h1><p>Parametric SketchUp cabinet builder - v0.12.0</p></header>
+      <header><h1>Kero Cabinet</h1><p>Parametric SketchUp cabinet builder - v0.12.1</p></header>
       <main>
         <section class="section">
           <h2>Case dimensions</h2>
           <div class="grid">
             <div><label for="name">Component name</label><input id="name" type="text" style="min-width:0"></div>
             <div><label for="width">Width (mm)</label><input id="width" type="number" step="1"></div>
-            <div><label for="height">Height (mm)</label><input id="height" type="number" step="1"></div>
+            <div><label for="height">Overall height (mm)</label><input id="height" type="number" step="1"></div>
             <div><label for="depth">Overall depth (mm)</label><input id="depth" type="number" step="1"></div>
             <div><label for="panel">Case panel (mm)</label><input id="panel" type="number" step="1"></div>
             <div><label for="back">Back panel (mm)</label><input id="back" type="number" step="1"></div>
             <div><label for="front">Door/front thickness (mm)</label><input id="front" type="number" step="1"></div>
             <div><label for="gap">Front gap (mm)</label><input id="gap" type="number" step="0.5"></div>
           </div>
-          <p class="hint">Depth includes the back and any overlay fronts. The case is shortened to keep the requested overall depth. Enter the total height including the toe kick.</p>
+          <p class="hint">Depth includes the back and any overlay fronts. The case is shortened to keep the requested overall depth. Overall height includes the toe kick and any enabled worktop.</p>
         </section>
         <section class="section">
           <h2>Toe kick</h2>
@@ -892,7 +897,7 @@ module KeroCabinet
             <div><label for="worktop_left_overhang">Left overhang (mm)</label><input id="worktop_left_overhang" type="number" min="0" max="300"></div>
             <div><label for="worktop_right_overhang">Right overhang (mm)</label><input id="worktop_right_overhang" type="number" min="0" max="300"></div>
           </div>
-          <p class="hint">Default: 30 mm MDF, separate Worktop Sheet material. Follows this cabinet when regenerated. Thickness adds above cabinet height; overhangs add to outside dimensions. Does not replace the structural top panel or remove manually modeled tops. For neighboring cabinets, leave side overhangs at zero to avoid overlap.</p>
+          <p class="hint">Default: 30 mm MDF, separate Worktop Sheet material. Follows this cabinet when regenerated. Thickness is included in Overall height; the case is shortened accordingly. Overhangs add to outside width/depth. Does not replace the structural top panel or remove manually modeled tops. For neighboring cabinets, leave side overhangs at zero to avoid overlap.</p>
         </section>
         <section class="section">
           <h2>Top / Bottom / Back construction</h2>
