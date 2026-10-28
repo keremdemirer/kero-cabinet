@@ -116,7 +116,7 @@ class MockInstance
   def set_attribute(dict, key, value)
     (@attributes ||= {})[[dict,key]] = value
   end
-  attr_accessor :name, :material
+  attr_accessor :name, :material, :hidden
   attr_reader :definition, :transformation
   def initialize(definition, transformation)
     @definition = definition

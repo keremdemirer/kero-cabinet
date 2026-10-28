@@ -1,5 +1,5 @@
 # frozen_string_literal: true
-# Kero Cabinet v0.16.1, SketchUp 2020+; all design inputs use millimetres.
+# Kero Cabinet v0.17.0, SketchUp 2020+; all design inputs use millimetres.
 require 'sketchup.rb'
 require 'json'
 require_relative 'updater'
@@ -9,7 +9,7 @@ module KeroCabinet
 
   %i[DICT VERSION DEFAULT DRAWER_SLIDES].each { |name| remove_const(name) if const_defined?(name, false) }
   DICT = 'kero_cabinet'.freeze
-  VERSION = '0.16.1'.freeze
+  VERSION = '0.17.0'.freeze
 
   DEFAULT = {
     'name' => 'Parametric Cabinet',
@@ -115,6 +115,13 @@ module KeroCabinet
       end
     end
 
+    dialog.add_action_callback('interior_view') do |_context|
+      if instance && instance.valid?
+        show_interior_view(instance)
+      else
+        UI.messagebox('Create the cabinet first, then open Interior view.')
+      end
+    end
     dialog.add_action_callback('organizer_preview') do |_context, raw|
       begin
         request=JSON.parse(raw)
@@ -974,6 +981,7 @@ module KeroCabinet
         target.set_attribute(DICT, 'config', JSON.generate(c))
         target.set_attribute(DICT, 'version', VERSION)
       end
+      apply_interior_visibility(instance)
       model.selection.clear
       model.selection.add(instance)
       remove_unused_part_definitions(model, obsolete)
@@ -1181,6 +1189,104 @@ module KeroCabinet
     show_dialog(cabinet)
   end
 
+  def interior_groups(instance)
+    c=JSON.parse(cabinet_config_raw(instance))
+    groups=[]
+    c['bays'].each_with_index do |bay,i|
+      sections=bay['kind']=='stack' ? bay['sections'] : [bay]
+      sections.each_with_index do |section,s|
+        prefix=sections.length==1 ? "Bay #{i+1}" : "Bay #{i+1} section #{s+1}"
+        label=sections.length==1 ? "Bay #{i+1}" : "Bay #{i+1} / #{s.zero? ? 'bottom' : s==sections.length-1 ? 'top' : "section #{s+1}"}"
+        if section['kind']=='door'
+          groups << { 'label'=>"#{label} - doors",'fronts'=>(1..section['doors']).map { |j| "#{prefix} door #{j}" } }
+        elsif section['kind']=='drawer'
+          section['drawers'].times { |j| groups << { 'label'=>"#{label} - drawer #{j+1}#{j.zero? ? ' (bottom)' : ''}",'fronts'=>["#{prefix} drawer front #{j+1}"] } }
+        end
+      end
+    end
+    groups
+  end
+
+  def interior_hidden_fronts(definition)
+    raw=definition.get_attribute(DICT,'interior_hidden_fronts')
+    value=raw.is_a?(String) ? JSON.parse(raw) : []
+    value.is_a?(Array) ? value.grep(String) : []
+  rescue JSON::ParserError
+    []
+  end
+
+  def apply_interior_visibility(instance)
+    hidden=interior_hidden_fronts(instance.definition)
+    names=interior_groups(instance).flat_map { |group| group['fronts'] }
+    instance.definition.entities.grep(Sketchup::ComponentInstance).each do |part|
+      part.hidden=hidden.include?(part.name) if names.include?(part.name)
+    end
+    instance.definition.set_attribute(DICT,'interior_hidden_fronts',JSON.generate(hidden & names))
+  end
+
+  def set_interior_visibility(instance,index,show)
+    raise ArgumentError, 'The cabinet is no longer available.' unless instance && instance.valid?
+    groups=interior_groups(instance)
+    unless index=='all' || (index.is_a?(Integer) && index>=0 && index<groups.length)
+      raise ArgumentError, 'Select an available cabinet section.'
+    end
+    model=Sketchup.active_model
+    model.start_operation('Show cabinet interior',true)
+    begin
+      instance.make_unique unless linked_cabinet?(instance)
+      hidden=interior_hidden_fronts(instance.definition)
+      names=index=='all' ? groups.flat_map { |group| group['fronts'] } : groups[index]['fronts']
+      hidden=show ? hidden|names : hidden-names
+      instance.definition.set_attribute(DICT,'interior_hidden_fronts',JSON.generate(hidden))
+      apply_interior_visibility(instance)
+      model.commit_operation
+    rescue StandardError
+      model.abort_operation
+      raise
+    end
+  end
+
+  def interior_view_html(groups,hidden,linked)
+    initial=JSON.generate({'groups'=>groups,'hidden'=>hidden}).gsub('</','<\\/')
+    <<~HTML
+      <!doctype html><html lang="en"><head><meta charset="utf-8"><style>
+      body{font:14px -apple-system,BlinkMacSystemFont,Arial,sans-serif;color:#253b30;background:#f5f6f1;padding:18px}h1{font-size:19px}p{font-size:12px;line-height:1.5;color:#66705e}.row{display:flex;gap:12px;align-items:center;background:white;border:1px solid #dce2d5;padding:14px;margin:8px 0;border-radius:8px}.row input{width:18px;height:18px}button{padding:10px;border:1px solid #bac8b2;border-radius:6px;background:white;color:#355e40;cursor:pointer}#error{color:#ae3429}
+      </style></head><body><h1>Interior view</h1><p>Show the interior of individual sections. Fronts are hidden; boxes, shelves and organizers stay in place. Changes appear immediately and can be undone. This panel uses the saved cabinet layout; apply pending parameter edits first.</p>
+      <p>#{linked ? 'Linked copies share this view state.' : 'This view applies only to the selected cabinet.'} Use Show all fronts before CutList or exports that exclude hidden objects.</p>
+      <button onclick="setAll(true)">Show all interiors</button> <button onclick="setAll(false)">Show all fronts</button><div id="groups"></div><p id="error"></p>
+      <script>
+      const initial=#{initial};
+      function renderInterior(state){document.getElementById('groups').innerHTML=state.groups.map((g,i)=>'<label class="row"><input type="checkbox" '+(g.fronts.every(n=>state.hidden.includes(n))?'checked':'')+' onchange="setInterior('+i+',this.checked)"><span>'+g.label+'<br><small>Show interior</small></span></label>').join('')||'<p>This cabinet has no doors or drawer fronts.</p>';}
+      function setInterior(index,show){window.sketchup.interior(JSON.stringify({index,show}));}
+      function setAll(show){setInterior('all',show);}
+      function interiorError(message){document.getElementById('error').textContent=message;}
+      renderInterior(initial);
+      </script></body></html>
+    HTML
+  end
+
+  def show_interior_view(instance=nil)
+    instance ||= selected_cabinet
+    return UI.messagebox('Select a Kero Cabinet component first.') unless instance && instance.valid?
+    dialog=UI::HtmlDialog.new(dialog_title:'Kero Cabinet | Interior view',preferences_key:'KeroCabinet.InteriorView',scrollable:true,resizable:true,width:430,height:580,style:UI::HtmlDialog::STYLE_DIALOG)
+    dialog.set_html(interior_view_html(interior_groups(instance),interior_hidden_fronts(instance.definition),linked_cabinet?(instance)))
+    dialog.add_action_callback('interior') do |_context,raw|
+      begin
+        request=JSON.parse(raw)
+        raise ArgumentError, 'Invalid interior switch value.' unless [true,false].include?(request['show'])
+        set_interior_visibility(instance,request['index'],request['show'])
+        state={'groups'=>interior_groups(instance),'hidden'=>interior_hidden_fronts(instance.definition)}
+        dialog.execute_script("renderInterior(#{JSON.generate(state)});interiorError('')")
+      rescue StandardError => e
+        dialog.execute_script("interiorError(#{JSON.generate(e.message)})")
+      end
+    end
+    @dialogs ||= []
+    @dialogs << dialog
+    dialog.set_on_closed { @dialogs.delete(dialog) }
+    dialog.show
+  end
+
   def dialog_html
     <<~'HTML'
       <!doctype html>
@@ -1223,7 +1329,7 @@ module KeroCabinet
       </style>
       </head>
       <body>
-      <header class="editor-header"><div><h1>Kero Cabinet</h1><p>Design your cabinet. Fine-tune only what you need.</p></div><span class="version-tag">v0.16.1 &middot; mm</span></header>
+      <header class="editor-header"><div><h1>Kero Cabinet</h1><p>Design your cabinet. Fine-tune only what you need.</p></div><span class="version-tag">v0.17.0 &middot; mm</span></header>
       <p id="linked-notice" class="linked-notice" hidden></p>
       <nav class="editor-tabs" role="tablist" aria-label="Cabinet settings">
         <button id="tab-size" type="button" role="tab" data-tab="size" aria-controls="panel-size" aria-selected="true" onclick="showTab('size')">Size &amp; fronts</button>
@@ -1344,7 +1450,7 @@ module KeroCabinet
           <details class="help-details"><summary>How this works</summary><p class="hint">Default: 30 mm MDF, separate Worktop Sheet material. Follows this cabinet when regenerated. Thickness is included in Overall height; the case is shortened accordingly. Overhangs add to outside width/depth. Does not replace the structural top panel or remove manually modeled tops. For neighboring cabinets, leave side overhangs at zero to avoid overlap.</p></details>
         </section></div>
       </main>
-      <div class="actions"><div class="editor-summary" id="editor-summary" aria-live="polite"></div><div class="action-row"><span class="error" id="error" role="alert"></span><button class="primary" type="button" onclick="submitConfig()">Apply to model</button></div></div>
+      <div class="actions"><div class="editor-summary" id="editor-summary" aria-live="polite"></div><div class="action-row"><span class="error" id="error" role="alert"></span><button type="button" onclick="window.sketchup.interior_view()">Interior view...</button><button class="primary" type="button" onclick="submitConfig()">Apply to model</button></div></div>
       <script>
         const initial = /* INITIAL_CONFIG */ null;
         const linkedCount=initial._linked_count||0;
@@ -1607,6 +1713,18 @@ module KeroCabinet
       end
     end
     @linked_commands_registered = true
+  end
+
+  if defined?(UI) && UI.respond_to?(:menu) && !@interior_command_registered
+    interior_menu=@menu || UI.menu('Plugins')
+    interior_menu.add_item(@menu ? 'Interior view...' : 'Kero Cabinet | Interior view...') { show_interior_view }
+    if UI.respond_to?(:add_context_menu_handler)
+      UI.add_context_menu_handler do |context_menu|
+        cabinet=selected_cabinet
+        context_menu.add_item('Kero Cabinet | Interior view...') { show_interior_view(cabinet) } if cabinet
+      end
+    end
+    @interior_command_registered=true
   end
 
 end

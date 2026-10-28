@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.17.0 - 2026-10-29
+- Add a live Interior view panel with per-door-section and per-drawer Show interior switches.
+- Hide selected fronts without moving or deleting geometry; include Show all interiors and Show all fronts actions.
+- Preserve view state through regeneration, share it within linked families and isolate ordinary copies.
+- Expose the panel in the menu, context menu and cabinet editor, with undoable model changes and reload cleanup.
+- Document saved-layout behavior and restoring fronts before exports that omit hidden objects.
+
 ## v0.16.1 - 2026-10-29
 - Seat every drawer box directly against the rear face of its applied drawer front.
 - Remove artificial front gaps and face-frame depth setbacks for side-mount and undermount drawers, including inset and overlay layouts.
