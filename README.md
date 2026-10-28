@@ -2,7 +2,7 @@
 
 **A parametric cabinet builder for SketchUp.** Enter dimensions and a bay layout to create an editable cabinet component.
 
-Version: **v0.12.1 (early development)**. The original project reports use in SketchUp 2025. Automated tests use a mock SketchUp API; they are not runtime integration tests.
+Version: **v0.13.0 (early development)**. The original project reports use in SketchUp 2025. Automated tests use a mock SketchUp API; they are not runtime integration tests.
 
 ## Features
 
@@ -22,14 +22,14 @@ The plugin does not generate cut lists. It targets **CutList v4.1.12** for the c
 
 1. Download the RBZ from the `kero-cabinet-rbz` artifact of a successful GitHub Actions run, or build it locally.
 2. In SketchUp, open **Extensions > Extension Manager > Install Extension**.
-3. Select `Kero_Cabinet_v0.12.1.rbz` and restart SketchUp.
+3. Select `Kero_Cabinet_v0.13.0.rbz` and restart SketchUp.
 4. Choose **Extensions > Kero Cabinet > Create new cabinet...**.
 
 To edit a cabinet, select its component and choose **Kero Cabinet | Edit parameters** from the context menu, or **Edit selected cabinet...** from the extension menu.
 
 ## Updates from GitHub
 
-Install v0.12.1 once using the RBZ. Future releases can be installed from
+Install v0.13.0 once using the RBZ. Future releases can be installed from
 **Extensions > Kero Cabinet > Check for updates...**, without downloading or
 installing another RBZ manually. The plugin reloads automatically after an update. Apply or cancel any open cabinet
 editor changes before starting: editors close during reload. The model is not
@@ -64,7 +64,7 @@ Internal shelves behind inset doors start behind the door back with the configur
 
 ### First upgrade to live reload
 
-The updater running before v0.12.1 still asks for a restart. After installing this
+The updater running before v0.13.0 still asks for a restart. After installing this
 version using the old updater or Extension Manager, apply/close Kero Cabinet
 editors, then run this once in **Window > Ruby Console** to activate without a
 SketchUp restart:
@@ -82,12 +82,34 @@ mock SketchUp API; real runtime validation on the user's installation is needed.
 ### Update connection troubleshooting
 
 Internet access in a browser does not prove that SketchUp can reach GitHub.
-From v0.12.1 the updater uses SketchUp's native HTTP transport and reports the
+From v0.13.0 the updater uses SketchUp's native HTTP transport and reports the
 actual failure category. Check application firewall/proxy/VPN settings when
 SketchUp cannot reach `api.github.com`. Certificate checks are never disabled.
 If an older updater cannot download this fix, install the current RBZ once via
 Extension Manager and restart SketchUp before checking again. Native HTTP tests
 use mocks; a runtime check on the affected SketchUp installation is still needed.
+
+## Cabinet editor
+
+The editor is organized into four tabs:
+
+- **Size & fronts**: cabinet name, overall dimensions, inset/overlay placement,
+  and face-frame enablement. Frame dimensions are under an expandable detail.
+- **Layout**: left-to-right bays and mixed drawer/door/shelf sections.
+- **Build**: material thicknesses, top/bottom/back construction, and drawer hardware.
+- **Base & top**: toe kick, timber supports, and optional per-cabinet worktop.
+
+Worktop fields remain hidden until enabled; timber dimensions hide when supports
+are off or toe height is zero. Long explanations and top-panel placement diagrams
+are expandable. A persistent footer shows dimensions, bay count and front style.
+Invalid numeric inputs automatically reveal their tab/details and receive focus.
+Tabs support keyboard arrows and Home/End. All existing saved parameters are
+preserved; this release changes editor organization, not cabinet geometry.
+
+Grouping references: [CabinetSense cabinet properties](https://sites.google.com/a/cabinetsensesoftware.com/cabinetsense-wiki/component-glossary/base-cabinet)
+and [SketchThis feature help](https://app.sketchthis.net/help/). No third-party
+code, branding, icons or proprietary visual assets are copied. The editor is
+custom to Kero Cabinet.
 
 ## Per-cabinet worktops
 
@@ -345,18 +367,19 @@ ruby test/drawer_height_test.rb
 ruby test/reload_test.rb
 ruby test/stock_test.rb
 ruby test/worktop_test.rb
+node test/editor_test.js
 ruby test/updater_test.rb
 python3 scripts/update_manifest.py --check
 bash scripts/build.sh
 ```
 
-Output: `dist/Kero_Cabinet_v0.12.1.rbz`.
+Output: `dist/Kero_Cabinet_v0.13.0.rbz`.
 
 CI checks text, Ruby syntax, 27 geometry configurations, and archive integrity on pushes and pull requests. Successful runs upload the installation package.
 
 ## Existing models
 
-From v0.12.1, regenerating a cabinet replaces per-part definitions with shared
+From v0.13.0, regenerating a cabinet replaces per-part definitions with shared
 stock definitions and applies stock-based material names.
 
 From v0.4.1, the saved depth value includes the back panel. Editing and regenerating an older cabinet with the same depth shortens its case by the back thickness. To preserve its previous physical depth, increase the input by that thickness before regenerating.
@@ -374,9 +397,9 @@ Stored configuration keys and enum values remain compatible. Existing user-enter
 
 No license has been selected. No new license is added by this translation.
 
-From v0.12.1, overlay front thickness is also included in the saved depth value. Regenerating an older overlay cabinet with the same input shortens the case by the front thickness. Increase the input by the front thickness only if you want to preserve the old physical depth.
+From v0.13.0, overlay front thickness is also included in the saved depth value. Regenerating an older overlay cabinet with the same input shortens the case by the front thickness. Increase the input by the front thickness only if you want to preserve the old physical depth.
 
-### Drawer depth fitting (v0.12.1)
+### Drawer depth fitting (v0.13.0)
 
 Undermount Auto selects the longest supported nominal length fitting the available
 space, retaining required rear allowance. Supported lengths currently stop at
@@ -389,4 +412,4 @@ slide lengths, brackets and mounting details still need product-specific review.
 
 Overlay stacked sections use the same gap-centered front grid as uniform drawer banks. With matching cabinet height, toe height, and gap, a bottom section weighted 1 of a total 4 aligns with the bottom front of four equal drawers. Inset sections retain divider/face-frame allowances and do not guarantee the same front-edge alignment.
 
-From v0.12.1, regenerating a cabinet with its integrated worktop enabled includes that top within the saved Overall height. To preserve the taller physical height generated by v0.12.0, increase the saved height by the worktop thickness before regeneration. Independent worktops are unchanged.
+From v0.13.0, regenerating a cabinet with its integrated worktop enabled includes that top within the saved Overall height. To preserve the taller physical height generated by v0.12.0, increase the saved height by the worktop thickness before regeneration. Independent worktops are unchanged.

@@ -1,5 +1,5 @@
 # frozen_string_literal: true
-# Kero Cabinet v0.12.1, SketchUp 2020+; all design inputs use millimetres.
+# Kero Cabinet v0.13.0, SketchUp 2020+; all design inputs use millimetres.
 require 'sketchup.rb'
 require 'json'
 require_relative 'updater'
@@ -9,7 +9,7 @@ module KeroCabinet
 
   %i[DICT VERSION DEFAULT DRAWER_SLIDES].each { |name| remove_const(name) if const_defined?(name, false) }
   DICT = 'kero_cabinet'.freeze
-  VERSION = '0.12.1'.freeze
+  VERSION = '0.13.0'.freeze
 
   DEFAULT = {
     'name' => 'Parametric Cabinet',
@@ -855,51 +855,42 @@ module KeroCabinet
         button:disabled{opacity:.4;cursor:default}.bay{background:#fff;padding:14px;border-color:#dedfd9}.bayhead{font-size:14px}.bay-subtitle{font-size:11px;color:#73776e;font-weight:400;margin-top:3px}
         .type-picker{display:flex;gap:4px;background:#f1f2ed;padding:4px;border-radius:8px;flex-wrap:wrap;margin:10px 0 12px}.type-picker button{flex:1;border:0;border-radius:5px;padding:8px 6px;background:transparent;color:#60665a;font-size:12px;cursor:pointer;white-space:nowrap}.type-picker button.active{background:#fff;color:#285e40;box-shadow:0 1px 4px #0002;font-weight:700}.type-picker button:focus-visible,.preset:focus-visible{outline:2px solid #3c7354;outline-offset:2px}
         .layout-tools{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:12px 0}.layout-tools span{font-size:11px;color:#73776e}.preset{border:1px solid #d7dcd2;border-radius:6px;background:#f7f9f4;padding:7px 8px;cursor:pointer;font-size:11px;color:#40583e}.section-layout{display:grid;grid-template-columns:76px minmax(0,1fr);gap:12px;align-items:start}.cabinet-preview{display:flex;flex-direction:column;border:3px solid #c4b598;border-radius:3px;background:#e9e2d5;min-height:210px;overflow:hidden}.preview-cell{border:0;border-bottom:2px solid #c4b598;background:#eee8dc;color:#5d5343;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:9px 2px;font-size:10px;min-height:35px;gap:4px}.preview-cell:last-child{border-bottom:0}.preview-cell.drawer{background:#ded2ba}.preview-cell.open{background:#f8f5ed}.preview-cell strong{font-size:11px}.stack-item{border:1px solid #e1e4da;border-left:3px solid #91a684;border-radius:8px;padding:12px;margin-bottom:10px;scroll-margin-top:15px;background:#fafbf8}.stack-head{display:flex;justify-content:space-between;align-items:center;gap:5px}.stack-title{font-size:12px;font-weight:700}.position-tag{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:#7d8575;display:block;margin-bottom:3px}.stack-actions{display:flex;gap:3px}.stack-actions button{border:1px solid #dce0d5;background:#fff;border-radius:5px;padding:5px 7px;cursor:pointer;font-size:12px}.stack-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.share-line{display:flex;align-items:center;justify-content:space-between;gap:5px;margin-bottom:4px}.share-line label{margin:0}.share-badge{font-size:11px;font-weight:700;color:#3c7354}.add-section{width:100%;padding:10px;border:1px dashed #a7b89d;border-radius:6px;background:#f6f9f2;color:#405b35;cursor:pointer}.bay-width{display:flex;align-items:center;gap:10px;padding:8px 0}.bay-width label{margin:0;white-space:nowrap}.bay-width input{max-width:95px}.bay-width span{font-size:11px;color:#73776e}.section-intro{font-size:11px;line-height:1.5;color:#6c7364;margin:8px 0 12px}@media(max-width:520px){.section-layout{grid-template-columns:1fr}.cabinet-preview{display:none}.type-picker button{font-size:11px}.stack-actions button{padding:5px}}
+
+        [hidden]{display:none!important}body{background:#f1f2ee;color:#253027}.editor-header{display:flex;justify-content:space-between;align-items:center;gap:12px;background:#253b30;padding:18px 22px}.editor-header h1{font-size:19px;letter-spacing:-.3px}.editor-header p{font-size:12px;color:#c7d4c7}.version-tag{font-size:11px;white-space:nowrap;color:#d7e4d5;border:1px solid #617463;border-radius:20px;padding:5px 9px}.editor-tabs{display:grid;grid-template-columns:1.25fr 1fr 1fr 1.2fr;gap:5px;padding:10px 18px;background:#f8f9f5;border-bottom:1px solid #dce2d5;position:sticky;top:0;z-index:5}.editor-tabs button{border:0;background:transparent;border-radius:7px;color:#697465;padding:10px 5px;font-size:12px;font-weight:600;cursor:pointer}.editor-tabs button[aria-selected=true]{background:#fff;color:#264d35;box-shadow:0 1px 5px #1a30251a}.editor-tabs button:focus-visible{outline:2px solid #68865c;outline-offset:1px}main{padding:16px 18px 130px}.section{border-color:#dfe5d8;border-radius:12px;padding:18px;margin-bottom:14px}.section h2{font-size:14px;letter-spacing:-.1px;margin-bottom:16px}.grid{gap:13px}.name-field{grid-column:1/-1}label{font-size:11px;color:#626d5c}input,select{border-color:#d4ddcc;border-radius:7px;height:38px;background:#fff}input:focus,select:focus{outline:2px solid #b5c9a8;outline-offset:1px}.advanced{border-top:1px solid #e5e9df;margin-top:16px;padding-top:12px}.advanced>summary{cursor:pointer;color:#49613d;font-size:12px;font-weight:600;margin-bottom:12px}.help-details{margin-top:12px}.help-details>summary{font-size:11px;color:#788471;cursor:pointer}.help-details .hint{background:#f6f8f2;padding:10px;border-radius:7px}.construction-card svg{height:72px;max-width:110px}.construction-card{padding:10px}.construction-card small{font-size:10px}.actions{padding:10px 18px 13px;display:block;z-index:10;box-shadow:0 -3px 16px #253b3009;border-color:#dce4d3}.editor-summary{font-size:11px;line-height:1.5;color:#67765e;padding:0 0 8px;border-bottom:1px solid #edf0e8;margin-bottom:9px}.action-row{display:flex;align-items:center;justify-content:space-between;gap:12px}.error{font-size:11px;max-height:64px;overflow:auto}.primary{white-space:nowrap;padding:12px 22px;background:#355e40}.check{background:#f4f7ef;padding:10px;border-radius:7px}.stack-item{background:#fafbf7}.bay{border-color:#dde5d5}.preset{background:#f5f8ef}.type-picker{background:#edf2e6}@media(max-width:540px){.editor-header{padding:14px}.editor-header p{max-width:230px;font-size:11px}.editor-tabs{padding:8px 10px;gap:2px}.editor-tabs button{font-size:11px}main{padding:12px 10px 140px}.section{padding:14px}.actions{padding:9px 12px}.primary{padding:11px 16px}.version-tag{font-size:10px}}
       </style>
       </head>
       <body>
-      <header><h1>Kero Cabinet</h1><p>Parametric SketchUp cabinet builder - v0.12.1</p></header>
+      <header class="editor-header"><div><h1>Kero Cabinet</h1><p>Design your cabinet. Fine-tune only what you need.</p></div><span class="version-tag">v0.13.0 &middot; mm</span></header>
+      <nav class="editor-tabs" role="tablist" aria-label="Cabinet settings">
+        <button id="tab-size" type="button" role="tab" data-tab="size" aria-controls="panel-size" aria-selected="true" onclick="showTab('size')">Size &amp; fronts</button>
+        <button id="tab-layout" type="button" role="tab" data-tab="layout" aria-controls="panel-layout" aria-selected="false" tabindex="-1" onclick="showTab('layout')">Layout</button>
+        <button id="tab-build" type="button" role="tab" data-tab="build" aria-controls="panel-build" aria-selected="false" tabindex="-1" onclick="showTab('build')">Build</button>
+        <button id="tab-base" type="button" role="tab" data-tab="base" aria-controls="panel-base" aria-selected="false" tabindex="-1" onclick="showTab('base')">Base &amp; top</button>
+      </nav>
       <main>
-        <section class="section">
-          <h2>Case dimensions</h2>
+<div id="panel-size" role="tabpanel" data-panel="size" aria-labelledby="tab-size"><section class="section">
+          <h2>Overall size</h2>
           <div class="grid">
-            <div><label for="name">Component name</label><input id="name" type="text" style="min-width:0"></div>
+            <div class="name-field"><label for="name">Cabinet name</label><input id="name" type="text" style="min-width:0"></div>
             <div><label for="width">Width (mm)</label><input id="width" type="number" step="1"></div>
             <div><label for="height">Overall height (mm)</label><input id="height" type="number" step="1"></div>
             <div><label for="depth">Overall depth (mm)</label><input id="depth" type="number" step="1"></div>
-            <div><label for="panel">Case panel (mm)</label><input id="panel" type="number" step="1"></div>
-            <div><label for="back">Back panel (mm)</label><input id="back" type="number" step="1"></div>
-            <div><label for="front">Door/front thickness (mm)</label><input id="front" type="number" step="1"></div>
-            <div><label for="gap">Front gap (mm)</label><input id="gap" type="number" step="0.5"></div>
           </div>
-          <p class="hint">Depth includes the back and any overlay fronts. The case is shortened to keep the requested overall depth. Overall height includes the toe kick and any enabled worktop.</p>
-        </section>
-        <section class="section">
-          <h2>Toe kick</h2>
+          <details class="help-details"><summary>How this works</summary><p class="hint">Depth includes the back and any overlay fronts. The case is shortened to keep the requested overall depth. Overall height includes the toe kick and any enabled worktop.</p></details>
+        </section><section class="section">
+          <h2>Front style</h2>
           <div class="grid two">
-            <div><label for="toe">Toe kick height (mm)</label><input id="toe" type="number" step="1"></div>
+            <div><label for="style">Door placement</label><select id="style"><option value="inset">Inset</option><option value="overlay">Overlay</option></select></div>
           </div>
-          <div class="check"><input id="toe_frame" type="checkbox"><label for="toe_frame">Create timber support frame</label></div>
-          <div class="grid two" style="margin-top:10px">
-            <div><label for="timber_height">Upright timber height (mm)</label><input id="timber_height" type="number" min="20" max="200"></div>
-            <div><label for="timber_thickness">Timber thickness (mm)</label><input id="timber_thickness" type="number" min="10" max="100"></div>
-          </div>
-          <p class="hint">Default: 50 x 100 mm timber with 100 mm upright. Butt joints, full-width front/rear rails and cross rails at bay boundaries, with extra rails for spans over 600 mm. The front panel spans the full cabinet width. The frame sits behind the toe kick front; taller toe spaces receive legs. No frame is created at zero toe height.</p>
-        </section>
-        <section class="section">
-          <h2>Worktop</h2>
-          <div class="check"><input id="worktop" type="checkbox" onchange="updateWorktop()"><label for="worktop">Create worktop for this cabinet</label></div>
-          <div class="grid two" style="margin-top:12px">
-            <div><label for="worktop_thickness">Worktop thickness (mm)</label><input id="worktop_thickness" type="number" min="6" max="100"></div>
-            <div><label for="worktop_material">Worktop material</label><input id="worktop_material" type="text" maxlength="60"></div>
-            <div><label for="worktop_front_overhang">Front overhang (mm)</label><input id="worktop_front_overhang" type="number" min="0" max="300"></div>
-            <div><label for="worktop_rear_overhang">Rear overhang (mm)</label><input id="worktop_rear_overhang" type="number" min="0" max="300"></div>
-            <div><label for="worktop_left_overhang">Left overhang (mm)</label><input id="worktop_left_overhang" type="number" min="0" max="300"></div>
-            <div><label for="worktop_right_overhang">Right overhang (mm)</label><input id="worktop_right_overhang" type="number" min="0" max="300"></div>
-          </div>
-          <p class="hint">Default: 30 mm MDF, separate Worktop Sheet material. Follows this cabinet when regenerated. Thickness is included in Overall height; the case is shortened accordingly. Overhangs add to outside width/depth. Does not replace the structural top panel or remove manually modeled tops. For neighboring cabinets, leave side overhangs at zero to avoid overlap.</p>
-        </section>
-        <section class="section">
+          <div class="check"><input id="frame" type="checkbox" onchange="updateFrame()"><label for="frame">Create face frame</label></div>
+        <details class="advanced"><summary>Face frame dimensions</summary><div class="grid two"><div><label for="frame_width">Face frame width (mm)</label><input id="frame_width" type="number" step="1"></div><div><label for="frame_depth">Face frame thickness (mm)</label><input id="frame_depth" type="number" step="1"></div></div></details></section></div>
+<div id="panel-layout" role="tabpanel" data-panel="layout" aria-labelledby="tab-layout" hidden><section class="section">
+          <h2>Cabinet layout</h2>
+          <p class="hint" style="margin:0 0 10px">Add bays from left to right. Choose their contents, then split a bay into stacked sections when you need drawers below doors.</p>
+          <div id="bays"></div>
+          <button class="ghost" onclick="addBay()" type="button">+ Add bay</button>
+        </section></div>
+<div id="panel-build" role="tabpanel" data-panel="build" aria-labelledby="tab-build" hidden><section class="section"><h2>Material thicknesses</h2><div class="grid two"><div><label for="panel">Case panel (mm)</label><input id="panel" type="number" step="1"></div><div><label for="back">Back panel (mm)</label><input id="back" type="number" step="1"></div><div><label for="front">Door/front thickness (mm)</label><input id="front" type="number" step="1"></div><div><label for="gap">Front gap (mm)</label><input id="gap" type="number" step="0.5"></div></div><details class="help-details"><summary>How this works</summary><p class="hint">Shared Sheet stock is grouped by thickness. Front gap is the visible space between fronts.</p></details></section><section class="section">
           <h2>Top / Bottom / Back construction</h2>
           <div class="grid">
             <div><label for="top_construction">Top construction</label><select id="top_construction" onchange="updateConstruction()"><option value="full">Full panel</option><option value="rails">Support rails</option></select></div>
@@ -907,8 +898,8 @@ module KeroCabinet
             <div><label for="back_construction">Back construction</label><select id="back_construction" onchange="updateConstruction()"><option value="full">Full panel</option><option value="rails">Support rails</option></select></div>
             <div><label for="rail_width">Rail width (mm)</label><input id="rail_width" type="number" min="40" max="200"></div>
           </div>
-          <p class="hint">Support rails use the case material and thickness. Rails extend the sides to the cabinet top. A full-width bottom sits under the sides. With back rails, no external back thickness is deducted from the overall depth.</p>
-          <h3>Top panel arrangement</h3>
+          <details class="help-details"><summary>How this works</summary><p class="hint">Support rails use the case material and thickness. Rails extend the sides to the cabinet top. A full-width bottom sits under the sides. With back rails, no external back thickness is deducted from the overall depth.</p></details>
+<details class="advanced"><summary>Top panel placement</summary>          <h3>Top panel arrangement</h3>
           <div class="construction-options" role="radiogroup" aria-label="Case construction">
             <label class="construction-option">
               <input type="radio" name="construction" value="sides_full">
@@ -939,43 +930,51 @@ module KeroCabinet
               </span>
             </label>
           </div>
-          <p class="hint">Top arrangement is locked when support rails are selected. Bottom construction stays independent. A full-width bottom raises the side start by its thickness without changing overall height.</p>
-        </section>
-        <section class="section">
-          <h2>Face frame and door style</h2>
-          <div class="grid two">
-            <div><label for="style">Door placement</label><select id="style"><option value="inset">Inset</option><option value="overlay">Overlay</option></select></div>
-            <div><label for="frame_width">Face frame width (mm)</label><input id="frame_width" type="number" step="1"></div>
-            <div><label for="frame_depth">Face frame thickness (mm)</label><input id="frame_depth" type="number" step="1"></div>
-          </div>
-          <div class="check"><input id="frame" type="checkbox" onchange="updateFrame()"><label for="frame">Create face frame</label></div>
-        </section>
-        <section class="section">
+          <details class="help-details"><summary>How this works</summary><p class="hint">Top arrangement is locked when support rails are selected. Bottom construction stays independent. A full-width bottom raises the side start by its thickness without changing overall height.</p></details>
+        </details></section><section class="section">
           <h2>Drawer construction</h2>
           <div class="grid two" style="margin-bottom:12px">
             <div><label for="drawer_height_mode">Drawer box height</label><select id="drawer_height_mode" onchange="updateDrawerHardware()"><option value="fit">Fit available height</option><option value="limit">Limit height</option></select></div>
             <div><label for="drawer_height_limit">Maximum box height (mm)</label><input id="drawer_height_limit" type="number" min="25" max="3000" step="1"></div>
           </div>
-          <p class="hint">Fit fills the available height after hardware clearances. Limit caps box height and still shrinks it to fit smaller openings. Front dimensions stay unchanged. Applies to all drawers.</p>
+          <details class="help-details"><summary>How this works</summary><p class="hint">Fit fills the available height after hardware clearances. Limit caps box height and still shrinks it to fit smaller openings. Front dimensions stay unchanged. Applies to all drawers.</p></details>
           <div style="margin-bottom:12px"><label for="drawer_slide">Drawer hardware</label><select id="drawer_slide" onchange="updateDrawerHardware()"><optgroup label="Side mount"><option value="side_48">Side mount - Easy-close / 47.7 mm min. box</option><option value="side_35">Side mount - Low-profile / 35.1 mm min. box</option></optgroup><optgroup label="Undermount"><option value="undermount_563h">Undermount - Blum TANDEM 563H reference</option></optgroup></select></div>
           <div style="margin-bottom:12px"><label for="undermount_length">Undermount drawer length (mm)</label><select id="undermount_length"><option value="0">Auto - longest fitting</option><option>229</option><option>305</option><option>381</option><option>457</option><option>533</option></select></div>
           <div style="margin-bottom:12px"><label for="drawer_rear_gap">Side-mount rear clearance (mm)</label><input id="drawer_rear_gap" type="number" min="3" max="50" step="1"></div>
-          <p class="hint">Auto chooses the longest supported TANDEM length that fits. This reference supports up to 533 mm, so deeper cabinets can retain unused rear space. Saved manual lengths stay fixed; select Auto to recalculate.</p>
+          <details class="help-details"><summary>How this works</summary><p class="hint">Auto chooses the longest supported TANDEM length that fits. This reference supports up to 533 mm, so deeper cabinets can retain unused rear space. Saved manual lengths stay fixed; select Auto to recalculate.</p></details>
           <p id="hardware_hint" class="hint"></p>
           <div class="grid two">
             <div><label for="drawer_thickness">Drawer box thickness (mm)</label><input id="drawer_thickness" type="number" min="6" max="30"></div>
             <div><label for="drawer_bottom">Drawer bottom thickness (mm)</label><input id="drawer_bottom" type="number" min="3" max="24"></div>
           </div>
-          <p class="hint">Box sides and front/back members share the box thickness. The bottom fits between them. Visible drawer fronts use Door/front thickness. Outer box width follows the selected slide side clearance. Shallow box heights adapt to the opening.</p>
-        </section>
-        <section class="section">
-          <h2>Cabinet layout</h2>
-          <p class="hint" style="margin:0 0 10px">Add bays from left to right. Choose their contents, then split a bay into stacked sections when you need drawers below doors.</p>
-          <div id="bays"></div>
-          <button class="ghost" onclick="addBay()" type="button">+ Add bay</button>
-        </section>
+          <details class="help-details"><summary>How this works</summary><p class="hint">Box sides and front/back members share the box thickness. The bottom fits between them. Visible drawer fronts use Door/front thickness. Outer box width follows the selected slide side clearance. Shallow box heights adapt to the opening.</p></details>
+        </section></div>
+<div id="panel-base" role="tabpanel" data-panel="base" aria-labelledby="tab-base" hidden><section class="section">
+          <h2>Toe kick</h2>
+          <div class="grid two">
+            <div><label for="toe">Toe kick height (mm)</label><input id="toe" type="number" step="1"></div>
+          </div>
+          <div class="check"><input id="toe_frame" type="checkbox" onchange="updateToeKick()"><label for="toe_frame">Create timber support frame</label></div>
+          <div id="timber-fields" class="grid two" style="margin-top:10px">
+            <div><label for="timber_height">Upright timber height (mm)</label><input id="timber_height" type="number" min="20" max="200"></div>
+            <div><label for="timber_thickness">Timber thickness (mm)</label><input id="timber_thickness" type="number" min="10" max="100"></div>
+          </div>
+          <details class="help-details"><summary>How this works</summary><p class="hint">Default: 50 x 100 mm timber with 100 mm upright. Butt joints, full-width front/rear rails and cross rails at bay boundaries, with extra rails for spans over 600 mm. The front panel spans the full cabinet width. The frame sits behind the toe kick front; taller toe spaces receive legs. No frame is created at zero toe height.</p></details>
+        </section><section class="section">
+          <h2>Worktop</h2>
+          <div class="check"><input id="worktop" type="checkbox" onchange="updateWorktop()"><label for="worktop">Create worktop for this cabinet</label></div>
+          <div id="worktop-fields" class="grid two" style="margin-top:12px">
+            <div><label for="worktop_thickness">Worktop thickness (mm)</label><input id="worktop_thickness" type="number" min="6" max="100"></div>
+            <div><label for="worktop_material">Worktop material</label><input id="worktop_material" type="text" maxlength="60"></div>
+            <div><label for="worktop_front_overhang">Front overhang (mm)</label><input id="worktop_front_overhang" type="number" min="0" max="300"></div>
+            <div><label for="worktop_rear_overhang">Rear overhang (mm)</label><input id="worktop_rear_overhang" type="number" min="0" max="300"></div>
+            <div><label for="worktop_left_overhang">Left overhang (mm)</label><input id="worktop_left_overhang" type="number" min="0" max="300"></div>
+            <div><label for="worktop_right_overhang">Right overhang (mm)</label><input id="worktop_right_overhang" type="number" min="0" max="300"></div>
+          </div>
+          <details class="help-details"><summary>How this works</summary><p class="hint">Default: 30 mm MDF, separate Worktop Sheet material. Follows this cabinet when regenerated. Thickness is included in Overall height; the case is shortened accordingly. Overhangs add to outside width/depth. Does not replace the structural top panel or remove manually modeled tops. For neighboring cabinets, leave side overhangs at zero to avoid overlap.</p></details>
+        </section></div>
       </main>
-      <div class="actions"><span class="error" id="error"></span><span class="spacer"></span><button class="primary" type="button" onclick="submitConfig()">Create / update component</button></div>
+      <div class="actions"><div class="editor-summary" id="editor-summary" aria-live="polite"></div><div class="action-row"><span class="error" id="error" role="alert"></span><button class="primary" type="button" onclick="submitConfig()">Apply to model</button></div></div>
       <script>
         const initial = /* INITIAL_CONFIG */ null;
         let bays = JSON.parse(JSON.stringify(initial.bays));
@@ -1001,7 +1000,13 @@ module KeroCabinet
           document.getElementById('drawer_rear_gap').disabled=under;
           document.getElementById('hardware_hint').textContent=under?'TANDEM reference: 12-16 mm sides; inside width = opening minus 42 mm; 13 mm recessed bottom; 14 mm below and 6 mm above the box. Front/back members are raised to leave the underside open. Hook holes, exact rear notches, locking devices and hardware models are not generated; prepare them using the manufacturer template.':'Side-mount height and side-space references. Kero Cabinet reserves 4 mm above and below the box. Check actual length, width limits, mounting and holes against the hardware datasheet.';
         }
+        function updateToeKick(){
+          const enabled=document.getElementById('toe_frame').checked&&Number(document.getElementById('toe').value)>0;
+          document.getElementById('timber-fields').hidden=!enabled;
+          for(const id of ['timber_height','timber_thickness'])document.getElementById(id).disabled=!enabled;
+        }
         function updateWorktop(){
+          document.getElementById('worktop-fields').hidden=!document.getElementById('worktop').checked;
           for(const id of ['worktop_thickness','worktop_material','worktop_front_overhang','worktop_rear_overhang','worktop_left_overhang','worktop_right_overhang']) document.getElementById(id).disabled=!document.getElementById('worktop').checked;
         }
         function updateFrame(){
@@ -1059,18 +1064,52 @@ module KeroCabinet
             ${typePicker(b.kind,`changeBay(${i},'kind','VALUE')`,true)}
             ${bays.length>1?`<div class="bay-width"><label>Width ratio</label><input type="number" aria-label="Bay width ratio" required min="0.2" max="10" step="0.1" value="${escapeHtml(b.weight)}" onchange="changeBay(${i},'weight',this.value);refreshLayout()"><span>Equal values give equal widths.</span></div>`:''}
             ${b.kind==='stack'?renderSections(b,i):`<div class="stack-grid">${counts(b,`changeBay(${i},'KEY',this.value)`)}</div><p class="hint">Need drawers below doors? Choose Mixed layout above.</p>`}</div>`).join('');
+          updateSummary();
         }
+        const tabOrder=['size','layout','build','base'];
+        function showTab(key){
+          if(!tabOrder.includes(key))return;
+          for(const id of tabOrder){
+            document.getElementById('panel-'+id).hidden=id!==key;
+            const tab=document.getElementById('tab-'+id);tab.setAttribute('aria-selected',String(id===key));tab.tabIndex=id===key?0:-1;
+          }
+        }
+        function revealInput(input){
+          const panel=input.closest('[data-panel]');if(panel)showTab(panel.dataset.panel);
+          let parent=input.parentElement;while(parent){if(parent.tagName==='DETAILS')parent.open=true;parent=parent.parentElement;}
+          input.focus();input.scrollIntoView({block:'center',behavior:'smooth'});
+        }
+        function updateSummary(){
+          const value=id=>document.getElementById(id).value;
+          const worktop=document.getElementById('worktop').checked?` / ${value('worktop_thickness')} mm worktop included`:'';
+          document.getElementById('editor-summary').textContent=`${value('width')} W \u00d7 ${value('height')} H \u00d7 ${value('depth')} D mm \u00b7 ${bays.length} ${bays.length===1?'bay':'bays'} \u00b7 ${value('style')}${worktop}`;
+        }
+        document.addEventListener('input',updateSummary);
+        document.addEventListener('change',updateSummary);
+        document.addEventListener('change',event=>{if(event.target.id==='toe')updateToeKick();});
+        document.addEventListener('keydown',event=>{
+          const tab=event.target.closest('[data-tab]');if(!tab||!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
+          event.preventDefault();let index=tabOrder.indexOf(tab.dataset.tab);
+          index=event.key==='Home'?0:event.key==='End'?tabOrder.length-1:(index+(event.key==='ArrowRight'?1:-1)+tabOrder.length)%tabOrder.length;
+          showTab(tabOrder[index]);document.getElementById('tab-'+tabOrder[index]).focus();
+        });
         const limits={worktop_thickness:[6,100],worktop_front_overhang:[0,300],worktop_rear_overhang:[0,300],worktop_left_overhang:[0,300],worktop_right_overhang:[0,300],drawer_height_limit:[25,3000],drawer_rear_gap:[3,50],width:[300,5000],height:[350,3500],depth:[250,1200],panel:[9,36],back:[3,24],front:[9,32],toe:[0,250],timber_height:[20,200],timber_thickness:[10,100],frame_width:[25,90],frame_depth:[12,36],gap:[1,6],rail_width:[40,200],drawer_thickness:[6,30],drawer_bottom:[3,24]};
         for(const [id,[min,max]] of Object.entries(limits)){const input=document.getElementById(id);input.min=min;input.max=max;input.required=true;input.title=`Allowed range: ${min}-${max} mm`;}
         document.addEventListener('wheel',event=>{if(document.activeElement?.type==='number')document.activeElement.blur();},{passive:true});
-        function showError(message){ document.getElementById('error').textContent=message; }
+        function showError(message){
+          document.getElementById('error').textContent=message;
+          if(!message)return;
+          if(/toe kick|timber|worktop/i.test(message))showTab('base');
+          else if(/bay|section|height ratio|drawer front/i.test(message))showTab('layout');
+          else if(/hardware|slide|stock|thickness|construction|rail|drawer height limit/i.test(message))showTab('build');
+        }
         function submitConfig(){
           showError('');
           for(const input of document.querySelectorAll('input[type=number]')){
             if(input.disabled)continue;
             if(input.value.trim()===''||!input.checkValidity()){
               const label=input.id?document.querySelector(`label[for="${input.id}"]`)?.textContent:input.parentElement.querySelector('label')?.textContent;
-              showError(`${label||'Number'}: enter a value from ${input.min} to ${input.max}. Current value: ${input.value||'empty'}.`);input.focus();return;
+              showError(`${label||'Number'}: enter a value from ${input.min} to ${input.max}. Current value: ${input.value||'empty'}.`);revealInput(input);return;
             }
           }
           const c={}; for(const id of ids) c[id]=['name','style','top_construction','bottom_construction','back_construction','drawer_slide','drawer_height_mode','worktop_material'].includes(id)?document.getElementById(id).value:n(document.getElementById(id).value);
@@ -1082,7 +1121,7 @@ module KeroCabinet
           if(!window.sketchup || !window.sketchup.submit) return showError('This panel must be used inside SketchUp.');
           window.sketchup.submit(JSON.stringify(c));
         }
-        updateFrame();updateConstruction();updateDrawerHardware();updateWorktop();renderBays();
+        updateFrame();updateConstruction();updateDrawerHardware();updateWorktop();updateToeKick();renderBays();updateSummary();
       </script>
       </body>
       </html>

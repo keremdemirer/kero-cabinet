@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.13.0 - 2026-10-29
+- Reorganize the editor into Size & fronts, Layout, Build, and Base & top tabs.
+- Add a persistent dimensions/layout summary, progressive details, conditional worktop/timber fields, and a simpler Apply to model action.
+- Reveal hidden invalid fields automatically and support keyboard tab navigation.
+- Preserve all saved defaults and verify editor navigation, validation, serialization and layout summaries.
+
 ## v0.12.1 - 2026-10-28
 - Include integrated worktop thickness within Overall height.
 - Shorten case panels, backs, dividers, fronts and interior layouts consistently, and validate available case height after the deduction.
