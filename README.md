@@ -2,7 +2,7 @@
 
 **A parametric cabinet builder for SketchUp.** Enter dimensions and a bay layout to create an editable cabinet component.
 
-Version: **v0.5.0 (early development)**. The original project reports use in SketchUp 2025. Automated tests use a mock SketchUp API; they are not runtime integration tests.
+Version: **v0.5.1 (early development)**. The original project reports use in SketchUp 2025. Automated tests use a mock SketchUp API; they are not runtime integration tests.
 
 ## Features
 
@@ -22,14 +22,14 @@ The plugin does not generate cut lists. Separate part components are intended fo
 
 1. Download the RBZ from the `kero-cabinet-rbz` artifact of a successful GitHub Actions run, or build it locally.
 2. In SketchUp, open **Extensions > Extension Manager > Install Extension**.
-3. Select `Kero_Cabinet_v0.5.0.rbz` and restart SketchUp.
+3. Select `Kero_Cabinet_v0.5.1.rbz` and restart SketchUp.
 4. Choose **Extensions > Kero Cabinet > Create new cabinet...**.
 
 To edit a cabinet, select its component and choose **Kero Cabinet | Edit parameters** from the context menu, or **Edit selected cabinet...** from the extension menu.
 
 ## Updates from GitHub
 
-Install v0.5.0 once using the RBZ. Future releases can be installed from
+Install v0.5.1 once using the RBZ. Future releases can be installed from
 **Extensions > Kero Cabinet > Check for updates...**, without downloading or
 installing another RBZ manually. Save your work and restart SketchUp after an update.
 
@@ -54,17 +54,20 @@ is still required. Future additional plugin assets require an updater migration.
 
 Internal shelves behind inset doors start behind the door back with the configured gap. Their rear edges remain aligned with the case; open shelves keep their original depth.
 
-## Top and back construction
+## Top, bottom, and back construction
 
-In **Top & back construction**, select **Full panel** or **Support rails**
+In **Top / Bottom / Back construction**, select **Full panel** or **Support rails**
 independently for the top and back. Defaults remain full panels for existing models.
 Rails use the case material and thickness, with a default width of **100 mm**.
 
 Top rails are horizontal at the front and rear. Back rails are vertical at the
 upper and lower rear edges, between the side panels. When both are selected,
 the upper rear rails meet as an L without overlapping. Side panels automatically
-use full-height construction and the construction selector is locked. The bottom
-panel remains solid. Internal dividers and shelves stop before the back rails.
+extend to the cabinet top and the top-arrangement selector is locked.
+The bottom panel remains solid and is selected independently: **Between sides**
+or **Full width**. With Full width, sides start on the bottom panel, one panel
+thickness higher, preserving the overall cabinet height. Legacy bottom choices
+are preserved when older cabinets are edited. Internal dividers and shelves stop before the back rails.
 With back rails there is no external back panel; the side depth uses the full
 requested depth. Oversized rails that cannot fit are rejected.
 
@@ -134,13 +137,13 @@ python3 scripts/update_manifest.py --check
 bash scripts/build.sh
 ```
 
-Output: `dist/Kero_Cabinet_v0.5.0.rbz`.
+Output: `dist/Kero_Cabinet_v0.5.1.rbz`.
 
 CI checks text, Ruby syntax, 27 geometry configurations, and archive integrity on pushes and pull requests. Successful runs upload the installation package.
 
 ## Existing models
 
-From v0.5.0, the saved depth value includes the back panel. Editing and regenerating an older cabinet with the same depth shortens its case by the back thickness. To preserve its previous physical depth, increase the input by that thickness before regenerating.
+From v0.5.1, the saved depth value includes the back panel. Editing and regenerating an older cabinet with the same depth shortens its case by the back thickness. To preserve its previous physical depth, increase the input by that thickness before regenerating.
 
 Stored configuration keys and enum values remain compatible. Existing user-entered cabinet names are preserved; rename them in the editor if desired. Regenerating a cabinet replaces its generated parts with English names. Old unused component definitions or materials already stored in a SketchUp model are not purged.
 

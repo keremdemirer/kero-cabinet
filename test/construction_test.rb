@@ -57,6 +57,40 @@ class ConstructionTest < Minitest::Test
     end
   end
 
+  def test_bottom_is_independent_of_top_and_back
+    %w[full rails].product(%w[full rails], %w[between full], %w[sides_full top_bottom_full], [true, false]).each do |top, back, bottom, arrangement, frame|
+      c, parts = build('top_construction' => top, 'back_construction' => back,
+        'bottom_construction' => bottom, 'construction' => arrangement, 'frame' => frame)
+      low, high = parts.fetch('Bottom panel').bounds_mm
+      assert_near(bottom == 'full' ? 0 : c['panel'], low[0])
+      assert_near(bottom == 'full' ? c['width'] : c['width'] - c['panel'], high[0])
+      side_low, side_high = parts.fetch('Left side').bounds_mm
+      assert_near c['toe'] + (bottom == 'full' ? c['panel'] : 0), side_low[2]
+      expected_top = c['construction'] == 'top_bottom_full' ? c['height'] - c['panel'] : c['height']
+      assert_near expected_top, side_high[2]
+      assert_near c['toe'], low[2]
+      assert_near c['toe'] + c['panel'], high[2]
+      assert_near c['height'], parts.values.map { |part| part.bounds_mm[1][2] }.max
+      parts.values.each do |part|
+        next if part.name == 'Bottom panel'
+        a, b = part.bounds_mm
+        overlaps = 3.times.all? { |axis| [b[axis], high[axis]].min - [a[axis], low[axis]].max > 0.001 }
+        refute overlaps, "Bottom overlaps #{part.name} with #{[top, back, bottom, arrangement, frame]}"
+      end
+    end
+  end
+
+  def test_legacy_bottom_migration_and_invalid_choice
+    %w[sides_full top_bottom_full].each do |arrangement|
+      old = KeroCabinet.clone_defaults
+      old.delete('bottom_construction')
+      old['construction'] = arrangement
+      result = KeroCabinet.validate_config(old)
+      assert_equal(arrangement == 'top_bottom_full' ? 'full' : 'between', result['bottom_construction'])
+    end
+    assert_raises(ArgumentError) { build('bottom_construction' => 'rails') }
+  end
+
   def test_drawer_stock_preserves_outer_size_and_clearances
     _, original = build
     [6, 18, 30].product([3, 12, 24]).each do |wall, bottom|

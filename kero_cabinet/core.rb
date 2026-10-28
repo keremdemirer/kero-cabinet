@@ -1,5 +1,5 @@
 # frozen_string_literal: true
-# Kero Cabinet v0.5.0, SketchUp 2020+; all design inputs use millimetres.
+# Kero Cabinet v0.5.1, SketchUp 2020+; all design inputs use millimetres.
 require 'sketchup.rb'
 require 'json'
 require_relative 'updater'
@@ -8,7 +8,7 @@ module KeroCabinet
   extend self
 
   DICT = 'kero_cabinet'.freeze
-  VERSION = '0.5.0'.freeze
+  VERSION = '0.5.1'.freeze
 
   DEFAULT = {
     'name' => 'Parametric Cabinet',
@@ -18,6 +18,7 @@ module KeroCabinet
     'panel' => 18,
     'construction' => 'sides_full',
     'top_construction' => 'full',
+    'bottom_construction' => 'between',
     'back_construction' => 'full',
     'rail_width' => 100,
     'drawer_thickness' => 12,
@@ -51,7 +52,13 @@ module KeroCabinet
     config = clone_defaults
     if instance && instance.valid?
       raw = instance.get_attribute(DICT, 'config')
-      config = clone_defaults.merge(JSON.parse(raw)) if raw.is_a?(String)
+      if raw.is_a?(String)
+        stored = JSON.parse(raw)
+        config = clone_defaults.merge(stored)
+        unless stored.key?('bottom_construction')
+          config['bottom_construction'] = stored['construction'] == 'top_bottom_full' ? 'full' : 'between'
+        end
+      end
     end
 
     dialog = UI::HtmlDialog.new(
@@ -127,6 +134,12 @@ module KeroCabinet
     end
     if c['top_construction'] == 'rails' || c['back_construction'] == 'rails'
       c['construction'] = 'sides_full'
+    end
+    unless source.key?('bottom_construction')
+      c['bottom_construction'] = source['construction'] == 'top_bottom_full' ? 'full' : 'between'
+    end
+    unless %w[between full].include?(c['bottom_construction'])
+      raise ArgumentError, 'Bottom construction must be between or full.'
     end
     c['toe_frame'] = (c['toe_frame'] == true)
     if c['toe_frame'] && c['toe'] > 0 && c['toe'] < c['timber_height']
@@ -237,18 +250,17 @@ module KeroCabinet
     # This also keeps top and bottom flush with the rear edge of the side panels.
     rear_inside = d - (c['back_construction'] == 'rails' ? t : 0)
     depth_inside = rear_inside - fd
-    if c['construction'] == 'sides_full'
-      # Long sides: top/bottom fit BETWEEN sides.
-      add.call('Left side', 'Case', 0, fd, toe, t, d - fd, h - toe)
-      add.call('Right side', 'Case', w - t, fd, toe, t, d - fd, h - toe)
-      add.call('Bottom panel', 'Case', t, fd, toe, w - 2*t, d - fd, t)
-      add.call('Top panel', 'Case', t, fd, h - t, w - 2*t, d - fd, t) if c['top_construction'] == 'full'
-    else
-      # Long horizontals: top/bottom span full width; sides fit BETWEEN them.
-      add.call('Bottom panel', 'Case', 0, fd, toe, w, depth_inside, t)
-      add.call('Top panel', 'Case', 0, fd, h - t, w, depth_inside, t)
-      add.call('Left side', 'Case', 0, fd, toe + t, t, d - fd, h - toe - 2*t)
-      add.call('Right side', 'Case', w - t, fd, toe + t, t, d - fd, h - toe - 2*t)
+    full_bottom = c['bottom_construction'] == 'full'
+    full_top = c['construction'] == 'top_bottom_full' && c['top_construction'] == 'full'
+    side_bottom = toe + (full_bottom ? t : 0)
+    side_top = h - (full_top ? t : 0)
+    add.call('Left side', 'Case', 0, fd, side_bottom, t, d - fd, side_top - side_bottom)
+    add.call('Right side', 'Case', w - t, fd, side_bottom, t, d - fd, side_top - side_bottom)
+    add.call('Bottom panel', 'Case', full_bottom ? 0 : t, fd, toe,
+      full_bottom ? w : w - 2*t, d - fd, t)
+    if c['top_construction'] == 'full'
+      add.call('Top panel', 'Case', full_top ? 0 : t, fd, h - t,
+        full_top ? w : w - 2*t, d - fd, t)
     end
     rail = c['rail_width']
     if c['top_construction'] == 'rails'
@@ -511,7 +523,7 @@ module KeroCabinet
       </style>
       </head>
       <body>
-      <header><h1>Kero Cabinet</h1><p>Parametric SketchUp cabinet builder - v0.5.0</p></header>
+      <header><h1>Kero Cabinet</h1><p>Parametric SketchUp cabinet builder - v0.5.1</p></header>
       <main>
         <section class="section">
           <h2>Case dimensions</h2>
@@ -540,16 +552,15 @@ module KeroCabinet
           <p class="hint">Default: 50 x 100 mm timber with 100 mm upright. Butt joints, full-width front/rear rails and cross rails at bay boundaries, with extra rails for spans over 600 mm. The front panel spans the full cabinet width. The frame sits behind the toe kick front; taller toe spaces receive legs. No frame is created at zero toe height.</p>
         </section>
         <section class="section">
-          <h2>Top &amp; back construction</h2>
+          <h2>Top / Bottom / Back construction</h2>
           <div class="grid">
             <div><label for="top_construction">Top construction</label><select id="top_construction" onchange="updateConstruction()"><option value="full">Full panel</option><option value="rails">Support rails</option></select></div>
+            <div><label for="bottom_construction">Bottom construction</label><select id="bottom_construction"><option value="between">Between sides</option><option value="full">Full width</option></select></div>
             <div><label for="back_construction">Back construction</label><select id="back_construction" onchange="updateConstruction()"><option value="full">Full panel</option><option value="rails">Support rails</option></select></div>
             <div><label for="rail_width">Rail width (mm)</label><input id="rail_width" type="number" min="40" max="200"></div>
           </div>
-          <p class="hint">Support rails use the case material and thickness. Rails require full-height sides. With back rails, no external back thickness is deducted from the overall depth.</p>
-        </section>
-        <section class="section">
-          <h2>Case construction</h2>
+          <p class="hint">Support rails use the case material and thickness. Rails extend the sides to the cabinet top. A full-width bottom sits under the sides. With back rails, no external back thickness is deducted from the overall depth.</p>
+          <h3>Top panel arrangement</h3>
           <div class="construction-options" role="radiogroup" aria-label="Case construction">
             <label class="construction-option">
               <input type="radio" name="construction" value="sides_full">
@@ -561,8 +572,8 @@ module KeroCabinet
                   <rect x="38" y="11" width="114" height="20" fill="#d9b985" stroke="#92794e" stroke-width="1.5"/>
                   <rect x="38" y="109" width="114" height="20" fill="#d9b985" stroke="#92794e" stroke-width="1.5"/>
                 </svg>
-                <strong>Full-height sides</strong>
-                <small>Top and bottom fit between the sides</small>
+                <strong>Top between sides</strong>
+                <small>Top fits between the sides; bottom is selected separately</small>
               </span>
             </label>
             <label class="construction-option">
@@ -575,12 +586,12 @@ module KeroCabinet
                   <rect x="18" y="31" width="20" height="78" fill="#d9b985" stroke="#92794e" stroke-width="1.5"/>
                   <rect x="152" y="31" width="20" height="78" fill="#d9b985" stroke="#92794e" stroke-width="1.5"/>
                 </svg>
-                <strong>Full-width top and bottom</strong>
-                <small>Sides fit between the top and bottom</small>
+                <strong>Full-width top</strong>
+                <small>Sides fit under the top; bottom is selected separately</small>
               </span>
             </label>
           </div>
-          <p class="hint">Green panels span the full height or width. The toe kick is calculated separately from these case dimensions.</p>
+          <p class="hint">Top arrangement is locked when support rails are selected. Bottom construction stays independent. A full-width bottom raises the side start by its thickness without changing overall height.</p>
         </section>
         <section class="section">
           <h2>Face frame and door style</h2>
@@ -610,7 +621,7 @@ module KeroCabinet
       <script>
         const initial = /* INITIAL_CONFIG */ null;
         let bays = JSON.parse(JSON.stringify(initial.bays));
-        const ids = ['name','width','height','depth','panel','back','front','toe','gap','style','frame_width','frame_depth','timber_height','timber_thickness','top_construction','back_construction','rail_width','drawer_thickness','drawer_bottom'];
+        const ids = ['name','width','height','depth','panel','back','front','toe','gap','style','frame_width','frame_depth','timber_height','timber_thickness','top_construction','bottom_construction','back_construction','rail_width','drawer_thickness','drawer_bottom'];
         for (const id of ids) document.getElementById(id).value = initial[id];
         document.getElementById('frame').checked = !!initial.frame;
         document.getElementById('toe_frame').checked = !!initial.toe_frame;
@@ -647,7 +658,7 @@ module KeroCabinet
         function showError(message){ document.getElementById('error').textContent=message; }
         function submitConfig(){
           showError('');
-          const c={}; for(const id of ids) c[id]=['name','style','top_construction','back_construction'].includes(id)?document.getElementById(id).value:n(document.getElementById(id).value);
+          const c={}; for(const id of ids) c[id]=['name','style','top_construction','bottom_construction','back_construction'].includes(id)?document.getElementById(id).value:n(document.getElementById(id).value);
           c.toe_frame=document.getElementById('toe_frame').checked;
           c.frame=document.getElementById('frame').checked;
           c.construction=document.querySelector('input[name=construction]:checked').value;

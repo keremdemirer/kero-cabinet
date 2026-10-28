@@ -6,7 +6,7 @@ module KeroCabinet
   unless file_loaded?(__FILE__)
     extension = SketchupExtension.new('Kero Cabinet', 'kero_cabinet/core')
     extension.description = 'Parametric cabinetry: casework, face frames, doors, shelves and drawer boxes.'
-    extension.version = '0.5.0'
+    extension.version = '0.5.1'
     extension.creator = 'Kero Cabinet'
     Sketchup.register_extension(extension, true)
     file_loaded(__FILE__)

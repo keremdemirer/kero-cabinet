@@ -121,6 +121,7 @@ end
 def run_case(construction, frame, style, bay_kinds, overrides = {})
   conf = KeroCabinet.clone_defaults
   conf['construction'] = construction
+  conf['bottom_construction'] = construction == 'top_bottom_full' ? 'full' : 'between'
   conf['frame'] = frame
   conf['style'] = style
   conf['bays'] = bay_kinds.map { |k|

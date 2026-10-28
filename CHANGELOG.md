@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.5.1 - 2026-10-28
+- Add independent Between sides / Full width bottom construction, including with top/back support rails.
+- Raise side-panel starts onto a full-width bottom without changing total height.
+- Group top, bottom, and back settings in one card and preserve legacy bottom arrangements.
+- Verify 32 combinations of top, back, bottom, panel arrangement, and face-frame settings.
+
 ## v0.5.0 - 2026-10-28
 - Add independent full-panel/support-rail options for the top and back, with 100 mm rails using case material and thickness.
 - Force full-height sides for rail construction and join upper rear rails without overlap.
