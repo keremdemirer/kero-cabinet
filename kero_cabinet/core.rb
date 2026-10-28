@@ -1,5 +1,5 @@
 # frozen_string_literal: true
-# Kero Cabinet v0.8.1, SketchUp 2020+; all design inputs use millimetres.
+# Kero Cabinet v0.8.2, SketchUp 2020+; all design inputs use millimetres.
 require 'sketchup.rb'
 require 'json'
 require_relative 'updater'
@@ -8,7 +8,7 @@ module KeroCabinet
   extend self
 
   DICT = 'kero_cabinet'.freeze
-  VERSION = '0.8.1'.freeze
+  VERSION = '0.8.2'.freeze
 
   DEFAULT = {
     'name' => 'Parametric Cabinet',
@@ -26,6 +26,8 @@ module KeroCabinet
     'drawer_slide' => 'side_48',
     'undermount_length' => 0,
     'drawer_rear_gap' => 10,
+    'drawer_height_mode' => 'fit',
+    'drawer_height_limit' => 125,
     'back' => 6,
     'front' => 18,
     'toe' => 100,
@@ -173,11 +175,14 @@ module KeroCabinet
     {
       'width' => [300, 5000], 'height' => [350, 3500], 'depth' => [250, 1200],
       'rail_width' => [40, 200], 'drawer_thickness' => [6, 30],
-      'drawer_rear_gap' => [3, 50], 'drawer_bottom' => [3, 24], 'panel' => [9, 36], 'back' => [3, 24], 'front' => [9, 32],
+      'drawer_height_limit' => [25, 3000], 'drawer_rear_gap' => [3, 50], 'drawer_bottom' => [3, 24], 'panel' => [9, 36], 'back' => [3, 24], 'front' => [9, 32],
       'toe' => [0, 250], 'timber_height' => [20, 200],
       'timber_thickness' => [10, 100], 'frame_width' => [25, 90],
       'frame_depth' => [12, 36], 'gap' => [1, 6]
     }.each { |key, (low, high)| number_between!(c, key, low, high) }
+    unless %w[fit limit].include?(c['drawer_height_mode'])
+      raise ArgumentError, 'Drawer box height must use Fit available height or Limit height.'
+    end
     unless DRAWER_SLIDES.key?(c['drawer_slide'])
       raise ArgumentError, 'Select a supported drawer slide profile.'
     end
@@ -502,7 +507,13 @@ module KeroCabinet
           upper_clearance = undermount ? 6.0 : 4.0
           allowance = lower_clearance + upper_clearance
           recess = undermount ? 13.0 : 0.0
-          dbh = [125.0, cell - allowance, cavity_top - cavity_bottom - allowance].min
+          dbh = [cell - allowance, cavity_top - cavity_bottom - allowance].min
+          if c['drawer_height_mode'] == 'limit'
+            if c['drawer_height_limit'] < required_box
+              raise ArgumentError, "Drawer height limit #{c['drawer_height_limit']} mm is below the selected hardware/stock minimum of #{required_box.round(1)} mm. Increase the limit or choose Fit available height."
+            end
+            dbh = [dbh, c['drawer_height_limit']].min
+          end
           wanted_z = undermount ? z_front + lower_clearance : z_front + (cell-dbh)/2
           dbz = [[wanted_z, cavity_bottom + lower_clearance].max, cavity_top - dbh - upper_clearance].min
           raise ArgumentError, 'Insufficient internal space for the drawer box.' if dbw < 80 || dbd < 100 || dbh + 0.001 < required_box
@@ -659,7 +670,7 @@ module KeroCabinet
       </style>
       </head>
       <body>
-      <header><h1>Kero Cabinet</h1><p>Parametric SketchUp cabinet builder - v0.8.1</p></header>
+      <header><h1>Kero Cabinet</h1><p>Parametric SketchUp cabinet builder - v0.8.2</p></header>
       <main>
         <section class="section">
           <h2>Case dimensions</h2>
@@ -740,6 +751,11 @@ module KeroCabinet
         </section>
         <section class="section">
           <h2>Drawer construction</h2>
+          <div class="grid two" style="margin-bottom:12px">
+            <div><label for="drawer_height_mode">Drawer box height</label><select id="drawer_height_mode" onchange="updateDrawerHardware()"><option value="fit">Fit available height</option><option value="limit">Limit height</option></select></div>
+            <div><label for="drawer_height_limit">Maximum box height (mm)</label><input id="drawer_height_limit" type="number" min="25" max="3000" step="1"></div>
+          </div>
+          <p class="hint">Fit fills the available height after hardware clearances. Limit caps box height and still shrinks it to fit smaller openings. Front dimensions stay unchanged. Applies to all drawers.</p>
           <div style="margin-bottom:12px"><label for="drawer_slide">Drawer hardware</label><select id="drawer_slide" onchange="updateDrawerHardware()"><optgroup label="Side mount"><option value="side_48">Side mount - Easy-close / 47.7 mm min. box</option><option value="side_35">Side mount - Low-profile / 35.1 mm min. box</option></optgroup><optgroup label="Undermount"><option value="undermount_563h">Undermount - Blum TANDEM 563H reference</option></optgroup></select></div>
           <div style="margin-bottom:12px"><label for="undermount_length">Undermount drawer length (mm)</label><select id="undermount_length"><option value="0">Auto - longest fitting</option><option>229</option><option>305</option><option>381</option><option>457</option><option>533</option></select></div>
           <div style="margin-bottom:12px"><label for="drawer_rear_gap">Side-mount rear clearance (mm)</label><input id="drawer_rear_gap" type="number" min="3" max="50" step="1"></div>
@@ -762,7 +778,7 @@ module KeroCabinet
       <script>
         const initial = /* INITIAL_CONFIG */ null;
         let bays = JSON.parse(JSON.stringify(initial.bays));
-        const ids = ['name','width','height','depth','panel','back','front','toe','gap','style','frame_width','frame_depth','timber_height','timber_thickness','top_construction','bottom_construction','back_construction','rail_width','drawer_thickness','drawer_bottom','drawer_slide','undermount_length','drawer_rear_gap'];
+        const ids = ['name','width','height','depth','panel','back','front','toe','gap','style','frame_width','frame_depth','timber_height','timber_thickness','top_construction','bottom_construction','back_construction','rail_width','drawer_thickness','drawer_bottom','drawer_slide','undermount_length','drawer_rear_gap','drawer_height_mode','drawer_height_limit'];
         for (const id of ids) document.getElementById(id).value = initial[id];
         document.getElementById('frame').checked = !!initial.frame;
         document.getElementById('toe_frame').checked = !!initial.toe_frame;
@@ -777,6 +793,7 @@ module KeroCabinet
           document.getElementById('back').disabled=document.getElementById('back_construction').value==='rails';
         }
         function updateDrawerHardware(){
+          document.getElementById('drawer_height_limit').disabled=document.getElementById('drawer_height_mode').value!=='limit';
           const under=document.getElementById('drawer_slide').value==='undermount_563h';
           document.getElementById('undermount_length').disabled=!under;
           document.getElementById('drawer_rear_gap').disabled=under;
@@ -838,7 +855,7 @@ module KeroCabinet
             ${bays.length>1?`<div class="bay-width"><label>Width ratio</label><input type="number" aria-label="Bay width ratio" required min="0.2" max="10" step="0.1" value="${escapeHtml(b.weight)}" onchange="changeBay(${i},'weight',this.value);refreshLayout()"><span>Equal values give equal widths.</span></div>`:''}
             ${b.kind==='stack'?renderSections(b,i):`<div class="stack-grid">${counts(b,`changeBay(${i},'KEY',this.value)`)}</div><p class="hint">Need drawers below doors? Choose Mixed layout above.</p>`}</div>`).join('');
         }
-        const limits={drawer_rear_gap:[3,50],width:[300,5000],height:[350,3500],depth:[250,1200],panel:[9,36],back:[3,24],front:[9,32],toe:[0,250],timber_height:[20,200],timber_thickness:[10,100],frame_width:[25,90],frame_depth:[12,36],gap:[1,6],rail_width:[40,200],drawer_thickness:[6,30],drawer_bottom:[3,24]};
+        const limits={drawer_height_limit:[25,3000],drawer_rear_gap:[3,50],width:[300,5000],height:[350,3500],depth:[250,1200],panel:[9,36],back:[3,24],front:[9,32],toe:[0,250],timber_height:[20,200],timber_thickness:[10,100],frame_width:[25,90],frame_depth:[12,36],gap:[1,6],rail_width:[40,200],drawer_thickness:[6,30],drawer_bottom:[3,24]};
         for(const [id,[min,max]] of Object.entries(limits)){const input=document.getElementById(id);input.min=min;input.max=max;input.required=true;input.title=`Allowed range: ${min}-${max} mm`;}
         document.addEventListener('wheel',event=>{if(document.activeElement?.type==='number')document.activeElement.blur();},{passive:true});
         function showError(message){ document.getElementById('error').textContent=message; }
@@ -851,7 +868,7 @@ module KeroCabinet
               showError(`${label||'Number'}: enter a value from ${input.min} to ${input.max}. Current value: ${input.value||'empty'}.`);input.focus();return;
             }
           }
-          const c={}; for(const id of ids) c[id]=['name','style','top_construction','bottom_construction','back_construction','drawer_slide'].includes(id)?document.getElementById(id).value:n(document.getElementById(id).value);
+          const c={}; for(const id of ids) c[id]=['name','style','top_construction','bottom_construction','back_construction','drawer_slide','drawer_height_mode'].includes(id)?document.getElementById(id).value:n(document.getElementById(id).value);
           c.toe_frame=document.getElementById('toe_frame').checked;
           c.frame=document.getElementById('frame').checked;
           c.construction=document.querySelector('input[name=construction]:checked').value;

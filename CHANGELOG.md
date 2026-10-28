@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.8.2 - 2026-10-28
+- Add Fit available height (default) and Limit height drawer box modes with a configurable cap, initially 125 mm.
+- Preserve front dimensions and hardware clearances while allowing taller boxes.
+- Reject limits below hardware/stock minimums and verify both modes with side-mount/undermount, inset/overlay and face-frame combinations.
+
 ## v0.8.1 - 2026-10-28
 - Add Auto - longest fitting nominal undermount length while preserving saved manual lengths.
 - Replace fixed side-mount rear allowance with adjustable 3-50 mm clearance, default 10 mm.

@@ -2,7 +2,7 @@
 
 **A parametric cabinet builder for SketchUp.** Enter dimensions and a bay layout to create an editable cabinet component.
 
-Version: **v0.8.1 (early development)**. The original project reports use in SketchUp 2025. Automated tests use a mock SketchUp API; they are not runtime integration tests.
+Version: **v0.8.2 (early development)**. The original project reports use in SketchUp 2025. Automated tests use a mock SketchUp API; they are not runtime integration tests.
 
 ## Features
 
@@ -22,14 +22,14 @@ The plugin does not generate cut lists. Separate part components are intended fo
 
 1. Download the RBZ from the `kero-cabinet-rbz` artifact of a successful GitHub Actions run, or build it locally.
 2. In SketchUp, open **Extensions > Extension Manager > Install Extension**.
-3. Select `Kero_Cabinet_v0.8.1.rbz` and restart SketchUp.
+3. Select `Kero_Cabinet_v0.8.2.rbz` and restart SketchUp.
 4. Choose **Extensions > Kero Cabinet > Create new cabinet...**.
 
 To edit a cabinet, select its component and choose **Kero Cabinet | Edit parameters** from the context menu, or **Edit selected cabinet...** from the extension menu.
 
 ## Updates from GitHub
 
-Install v0.8.1 once using the RBZ. Future releases can be installed from
+Install v0.8.2 once using the RBZ. Future releases can be installed from
 **Extensions > Kero Cabinet > Check for updates...**, without downloading or
 installing another RBZ manually. Save your work and restart SketchUp after an update.
 
@@ -59,7 +59,7 @@ Internal shelves behind inset doors start behind the door back with the configur
 ### Update connection troubleshooting
 
 Internet access in a browser does not prove that SketchUp can reach GitHub.
-From v0.8.1 the updater uses SketchUp's native HTTP transport and reports the
+From v0.8.2 the updater uses SketchUp's native HTTP transport and reports the
 actual failure category. Check application firewall/proxy/VPN settings when
 SketchUp cannot reach `api.github.com`. Certificate checks are never disabled.
 If an older updater cannot download this fix, install the current RBZ once via
@@ -118,6 +118,20 @@ the outer box dimensions and side clearances for the selected runner profile. Vi
 fronts still use the existing Door/front thickness setting. Bottom stock that
 cannot fit inside the box is rejected. These settings apply to all drawer bays.
 
+### Drawer box height
+
+**Drawer construction > Drawer box height** applies to all drawers:
+
+- **Fit available height** (default): use the available front/cavity height after
+  hardware clearances; there is no fixed 125 mm cap.
+- **Limit height**: cap box height at **Maximum box height**, initially 125 mm.
+  Smaller openings still shrink the box to fit. A cap below the hardware/stock
+  minimum is rejected with an explanatory error.
+
+Visible fronts, width, depth, slide selection and bottom recess stay unchanged.
+Existing cabinets without these settings use Fit when edited and regenerated;
+select Limit / 125 mm to preserve their previous short-box height behavior.
+
 ### Shallow drawers and side-mount slide profiles
 
 Choose **Drawer hardware** under Drawer construction. The default Easy-close
@@ -127,8 +141,8 @@ clearance (2132C reference). These rounded minimum heights come from manufacture
 minimum drawer-height requirements, not merely slide-body dimensions.
 
 The old fixed 100 mm section / 85 mm front / 60 mm box limits no longer apply
-to drawers. Box height adapts to available space up to the existing 125 mm
-preferred height. Kero Cabinet reserves 4 mm above and below the box and at least
+to drawers. Box height fills available space by default. Optional Limit height caps it at a
+selected maximum (125 mm initially). Kero Cabinet reserves 4 mm above and below the box and at least
 10 mm usable above its bottom. These are application allowances, not manufacturer
 specifications. Sections still need room for front/frame margins and dividers.
 Errors report the available front/opening and required height.
@@ -218,12 +232,13 @@ ruby test/construction_test.rb
 ruby test/stack_test.rb
 ruby test/shallow_drawer_test.rb
 ruby test/undermount_test.rb
+ruby test/drawer_height_test.rb
 ruby test/updater_test.rb
 python3 scripts/update_manifest.py --check
 bash scripts/build.sh
 ```
 
-Output: `dist/Kero_Cabinet_v0.8.1.rbz`.
+Output: `dist/Kero_Cabinet_v0.8.2.rbz`.
 
 CI checks text, Ruby syntax, 27 geometry configurations, and archive integrity on pushes and pull requests. Successful runs upload the installation package.
 
@@ -244,9 +259,9 @@ Stored configuration keys and enum values remain compatible. Existing user-enter
 
 No license has been selected. No new license is added by this translation.
 
-From v0.8.1, overlay front thickness is also included in the saved depth value. Regenerating an older overlay cabinet with the same input shortens the case by the front thickness. Increase the input by the front thickness only if you want to preserve the old physical depth.
+From v0.8.2, overlay front thickness is also included in the saved depth value. Regenerating an older overlay cabinet with the same input shortens the case by the front thickness. Increase the input by the front thickness only if you want to preserve the old physical depth.
 
-### Drawer depth fitting (v0.8.1)
+### Drawer depth fitting (v0.8.2)
 
 Undermount Auto selects the longest supported nominal length fitting the available
 space, retaining required rear allowance. Supported lengths currently stop at

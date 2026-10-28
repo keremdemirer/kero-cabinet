@@ -17,8 +17,8 @@ for 2132C is within that range. The 3832EC sheet recommends a drawer 27.0 mm
 narrower than the cabinet opening, implemented as 13.5 mm each side.
 
 The minimums are rounded upward. Four millimetres of box clearance above and
-below, at least ten millimetres of usable interior above the bottom, and a
-preferred box height of 125 mm are plugin design allowances, not product claims.
+below, at least ten millimetres of usable interior above the bottom, and the optional
+125 mm initial box-height cap are plugin design allowances, not product claims.
 The generated geometry does not model actual slide assemblies or mounting holes.
 
 These are height/side-space references, not certified product presets. In
