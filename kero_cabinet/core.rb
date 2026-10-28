@@ -1,5 +1,5 @@
 # frozen_string_literal: true
-# Kero Cabinet v0.17.1, SketchUp 2020+; all design inputs use millimetres.
+# Kero Cabinet v0.18.0, SketchUp 2020+; all design inputs use millimetres.
 require 'sketchup.rb'
 require 'json'
 require_relative 'updater'
@@ -9,7 +9,7 @@ module KeroCabinet
 
   %i[DICT VERSION DEFAULT DRAWER_SLIDES].each { |name| remove_const(name) if const_defined?(name, false) }
   DICT = 'kero_cabinet'.freeze
-  VERSION = '0.17.1'.freeze
+  VERSION = '0.18.0'.freeze
 
   DEFAULT = {
     'name' => 'Parametric Cabinet',
@@ -956,9 +956,9 @@ module KeroCabinet
     end
   end
 
-  def build_cabinet(c, instance)
+  def build_cabinet(c, instance, manage_operation: true, update_selection: true)
     model = Sketchup.active_model
-    model.start_operation(instance ? 'Edit Kero Cabinet' : 'Create Kero Cabinet', true)
+    model.start_operation(instance ? 'Edit Kero Cabinet' : 'Create Kero Cabinet', true) if manage_operation
     begin
       obsolete = []
       if instance && instance.valid?
@@ -982,12 +982,14 @@ module KeroCabinet
         target.set_attribute(DICT, 'version', VERSION)
       end
       apply_interior_visibility(instance)
-      model.selection.clear
-      model.selection.add(instance)
+      if update_selection
+        model.selection.clear
+        model.selection.add(instance)
+      end
       remove_unused_part_definitions(model, obsolete)
-      model.commit_operation
+      model.commit_operation if manage_operation
     rescue StandardError
-      model.abort_operation
+      model.abort_operation if manage_operation
       raise
     end
     instance
@@ -1189,6 +1191,123 @@ module KeroCabinet
     show_dialog(cabinet)
   end
 
+  # Walk reachable model entities, not unused component definitions or generated parts.
+  def migration_targets(model)
+    found={}
+    visited={}
+    walk=nil
+    walk=lambda do |entities,blocked,path|
+      entities.each do |item|
+        next unless item.is_a?(Sketchup::ComponentInstance) || (defined?(Sketchup::Group) && item.is_a?(Sketchup::Group))
+        locked=blocked || item.locked?
+        cabinet=item.is_a?(Sketchup::ComponentInstance) && item.get_attribute(DICT,'config').is_a?(String)
+        worktop=item.is_a?(Sketchup::ComponentInstance) && item.get_attribute(DICT,'worktop_config').is_a?(String)
+        if cabinet || worktop
+          entry=found[item] ||= {instance:item,kind:cabinet ? :cabinet : :worktop,locked:false}
+          entry[:locked] ||= locked
+          next
+        end
+        definition=item.definition
+        next if path.include?(definition) || visited[[definition,locked]]
+        visited[[definition,locked]]=true
+        walk.call(definition.entities,locked,path+[definition])
+      end
+    end
+    walk.call(model.entities,false,[])
+    found.values
+  end
+
+  def prepare_migration(model=Sketchup.active_model)
+    raise ArgumentError, 'Exit component/group editing before migrating the model.' if model.respond_to?(:active_path) && model.active_path
+    targets=migration_targets(model)
+    errors=[]
+    jobs=[]
+    linked={}
+    targets.each do |target|
+      item=target[:instance]
+      begin
+        raise ArgumentError, 'Object or containing group is locked. Unlock it before migration.' if target[:locked]
+        if target[:kind]==:cabinet
+          c=validate_config(JSON.parse(cabinet_config_raw(item)))
+          generate_parts(nil,c,nil,preview:true)
+          if linked_cabinet?(item)
+            prior=linked[item.definition]
+            if prior
+              prior[:count]+=1
+              next
+            end
+          end
+          job={instance:item,kind: :cabinet,config:c,count:1}
+          linked[item.definition]=job if linked_cabinet?(item)
+          jobs << job
+        else
+          c=validate_worktop(JSON.parse(item.get_attribute(DICT,'worktop_config')))
+          worktop_geometry(c)
+          unless item.definition.get_attribute(DICT,'stock_key').to_s.start_with?('stock-v1:')
+            raise ArgumentError, 'Unsupported worktop stock format. Edit this worktop separately before migration.'
+          end
+          jobs << {instance:item,kind: :worktop,config:c,count:1}
+        end
+      rescue StandardError => e
+        errors << "#{item.name.to_s.empty? ? 'Unnamed Kero object' : item.name}: #{e.message}"
+      end
+    end
+    raise ArgumentError,"Migration preflight failed. No model changes were made.\n\n#{errors.join("\n")}" unless errors.empty?
+    {jobs:jobs,cabinets:targets.count { |t| t[:kind]==:cabinet },worktops:targets.count { |t| t[:kind]==:worktop }}
+  end
+
+  def migrate_worktop_stock(item,config,model)
+    geometry=worktop_geometry(config)
+    old=item.definition
+    # Replacing only the canonical stock definition preserves the full placement
+    # transform, including user moves/rotations/scales and nested parent context.
+    temporary=box(model.entities,config['name'],geometry[:stock],*geometry[:origin],*geometry[:size],{})
+    item.definition=temporary.definition
+    item.material=temporary.material
+    item.set_attribute(DICT,'worktop_config',JSON.generate(config))
+    item.set_attribute(DICT,'version',VERSION)
+    temporary.erase!
+    remove_unused_part_definitions(model,[old])
+  end
+
+  def migrate_all(model=Sketchup.active_model,plan=nil)
+    plan ||= prepare_migration(model)
+    return plan if plan[:jobs].empty?
+    selection=model.selection.to_a
+    model.start_operation("Migrate all Kero Cabinets to #{VERSION}",true)
+    begin
+      plan[:jobs].each do |job|
+        item=job[:instance]
+        raise ArgumentError, 'A migration target is no longer available.' unless item.valid?
+        if job[:kind]==:cabinet
+          build_cabinet(job[:config],item,manage_operation:false,update_selection:false)
+        else
+          migrate_worktop_stock(item,job[:config],model)
+        end
+      end
+      model.selection.clear
+      model.selection.add(selection.select(&:valid?))
+      model.commit_operation
+    rescue StandardError
+      model.abort_operation
+      raise
+    end
+    plan
+  end
+
+  def migrate_all_command
+    model=Sketchup.active_model
+    return UI.messagebox('Close parameter/interior panels before migrating all objects.') if editors_open?
+    plan=prepare_migration(model)
+    return UI.messagebox('No Kero Cabinet objects were found in this model.') if plan[:jobs].empty?
+    message="Regenerate #{plan[:cabinets]} cabinet instances and #{plan[:worktops]} independent worktops using Kero Cabinet #{VERSION}?\n\nLinked families are rebuilt once. Saved settings, placement and opening poses are preserved. New geometry rules may change part sizes. The whole migration can be undone in one step."
+    return unless UI.messagebox(message,MB_OKCANCEL)==IDOK
+    migrate_all(model,plan)
+    UI.messagebox("Migration complete: #{plan[:cabinets]} cabinet instances and #{plan[:worktops]} worktops updated to #{VERSION}.")
+  rescue StandardError => e
+    UI.messagebox("Migration could not complete.\n#{e.message}")
+  end
+
   def interior_groups(instance)
     c=JSON.parse(cabinet_config_raw(instance))
     groups=[]
@@ -1374,7 +1493,7 @@ module KeroCabinet
       </style>
       </head>
       <body>
-      <header class="editor-header"><div><h1>Kero Cabinet</h1><p>Design your cabinet. Fine-tune only what you need.</p></div><span class="version-tag">v0.17.1 &middot; mm</span></header>
+      <header class="editor-header"><div><h1>Kero Cabinet</h1><p>Design your cabinet. Fine-tune only what you need.</p></div><span class="version-tag">v0.18.0 &middot; mm</span></header>
       <p id="linked-notice" class="linked-notice" hidden></p>
       <nav class="editor-tabs" role="tablist" aria-label="Cabinet settings">
         <button id="tab-size" type="button" role="tab" data-tab="size" aria-controls="panel-size" aria-selected="true" onclick="showTab('size')">Size &amp; fronts</button>
@@ -1770,6 +1889,12 @@ module KeroCabinet
       end
     end
     @interior_command_registered=true
+  end
+
+  if defined?(UI) && UI.respond_to?(:menu) && !@migration_command_registered
+    migration_menu=@menu || UI.menu('Plugins')
+    migration_menu.add_item(@menu ? 'Migrate all to current version...' : 'Kero Cabinet | Migrate all to current version...') { migrate_all_command }
+    @migration_command_registered=true
   end
 
 end

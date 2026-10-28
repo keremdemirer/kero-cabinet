@@ -2,7 +2,7 @@
 
 **A parametric cabinet builder for SketchUp.** Enter dimensions and a bay layout to create an editable cabinet component.
 
-Version: **v0.17.1 (early development)**. The original project reports use in SketchUp 2025. Automated tests use a mock SketchUp API; they are not runtime integration tests.
+Version: **v0.18.0 (early development)**. The original project reports use in SketchUp 2025. Automated tests use a mock SketchUp API; they are not runtime integration tests.
 
 ## Features
 
@@ -22,14 +22,14 @@ The plugin does not generate cut lists. It targets **CutList v4.1.12** for the c
 
 1. Download the RBZ from the `kero-cabinet-rbz` artifact of a successful GitHub Actions run, or build it locally.
 2. In SketchUp, open **Extensions > Extension Manager > Install Extension**.
-3. Select `Kero_Cabinet_v0.17.1.rbz` and restart SketchUp.
+3. Select `Kero_Cabinet_v0.18.0.rbz` and restart SketchUp.
 4. Choose **Extensions > Kero Cabinet > Create new cabinet...**.
 
 To edit a cabinet, select its component and choose **Kero Cabinet | Edit parameters** from the context menu, or **Edit selected cabinet...** from the extension menu.
 
 ## Updates from GitHub
 
-Install v0.17.1 once using the RBZ. Future releases can be installed from
+Install v0.18.0 once using the RBZ. Future releases can be installed from
 **Extensions > Kero Cabinet > Check for updates...**, without downloading or
 installing another RBZ manually. The plugin reloads automatically after an update. Apply or cancel any open cabinet
 editor changes before starting: editors close during reload. The model is not
@@ -331,6 +331,39 @@ Hook holes, locking devices, exact rear notches, grooves, runner models and dril
 are **not generated**. Prepare them with the manufacturer template before making
 a production drawer. The generated box is not a complete hardware-ready cut plan.
 
+## Migrate a model after an update
+
+After installing a new version, close Kero Cabinet panels, exit component/group
+editing and choose **Kero Cabinet > Migrate all to current version...**. This is
+an explicit command; updating plugin files does not regenerate the model automatically.
+The command reports the number of cabinet instances and independent worktops before
+starting. It includes objects inside nested groups/components, even when hidden.
+Shared container definitions are scanned once; unused definitions are not targets.
+
+All saved configurations and generated layouts are checked before changing the
+model. Invalid settings, unsupported independent-worktop stock or locked targets
+(including locked containers) stop the whole migration with an object-specific
+message. Unlock or correct the reported objects, then retry.
+
+Cabinets are regenerated from their saved parameters. Each linked family is
+rebuilt once; ordinary copies retain independent parameters. Placement transforms,
+opening poses and selection are preserved. Independent worktops retain their
+instance placement, tags, visibility and scale while refreshing their stock and
+version. Integrated worktops and organizers regenerate with their cabinet.
+New geometry rules can change part dimensions even when input parameters stay
+the same. Manually edited generated parts are replaced, just as with Apply to model.
+
+The migration is one SketchUp undo operation. A runtime failure aborts the complete
+operation rather than leaving a partially updated batch. Automated tests verify
+operation boundaries and abort handling with mocks; native undo/rollback still
+requires runtime validation in SketchUp. There is no global purge.
+
+The same command can be invoked from **Window > Ruby Console**:
+
+```ruby
+KeroCabinet.migrate_all_command
+```
+
 ## Interior inspection
 
 Select a cabinet and open **Kero Cabinet > Interior view...**, the matching
@@ -482,6 +515,7 @@ ruby test/undermount_test.rb
 ruby test/drawer_height_test.rb
 ruby test/drawer_front_test.rb
 ruby test/interior_view_test.rb
+ruby test/migration_test.rb
 ruby test/reload_test.rb
 ruby test/stock_test.rb
 ruby test/worktop_test.rb
@@ -494,7 +528,7 @@ python3 scripts/update_manifest.py --check
 bash scripts/build.sh
 ```
 
-Output: `dist/Kero_Cabinet_v0.17.1.rbz`.
+Output: `dist/Kero_Cabinet_v0.18.0.rbz`.
 
 CI checks text, Ruby syntax, 27 geometry configurations, and archive integrity on pushes and pull requests. Successful runs upload the installation package.
 

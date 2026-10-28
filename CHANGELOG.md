@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.18.0 - 2026-10-29
+- Add Migrate all to current version with model-wide scanning of cabinets and independent worktops, including nested containers.
+- Preflight every configuration/layout and reject locked or invalid targets before modifying the model.
+- Regenerate each linked family once, preserve independent-copy behavior, placements, opening poses and selection.
+- Refresh independent worktop stock/version in place without losing instance placement or visibility.
+- Use one undo operation with whole-batch abort handling; leave model migration explicit after plugin updates.
+
 ## v0.17.1 - 2026-10-29
 - Replace hidden-front inspection with physical opening poses: slide complete drawer assemblies forward and swing doors outward.
 - Move divider panels and Gridfinity previews with their drawer, using a 90% box-depth preview stroke and 90-degree door swings.
