@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.5.0 - 2026-10-28
+- Add independent full-panel/support-rail options for the top and back, with 100 mm rails using case material and thickness.
+- Force full-height sides for rail construction and join upper rear rails without overlap.
+- Preserve requested depth with internal back rails and retain the solid bottom.
+- Add separate drawer box and bottom thickness settings, both defaulting to 12 mm.
+- Preserve drawer outer sizes and runner clearances, and cover construction combinations and stock changes in regression tests.
+
 ## v0.4.2 - 2026-10-28
 - Extend the toe kick front across the full cabinet width to cover the support frame ends.
 - Group toe kick height and timber support-frame settings in one Toe kick card.

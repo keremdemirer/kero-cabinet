@@ -1,5 +1,5 @@
 # frozen_string_literal: true
-# Kero Cabinet v0.4.2, SketchUp 2020+; all design inputs use millimetres.
+# Kero Cabinet v0.5.0, SketchUp 2020+; all design inputs use millimetres.
 require 'sketchup.rb'
 require 'json'
 require_relative 'updater'
@@ -8,7 +8,7 @@ module KeroCabinet
   extend self
 
   DICT = 'kero_cabinet'.freeze
-  VERSION = '0.4.2'.freeze
+  VERSION = '0.5.0'.freeze
 
   DEFAULT = {
     'name' => 'Parametric Cabinet',
@@ -17,6 +17,11 @@ module KeroCabinet
     'depth' => 560,
     'panel' => 18,
     'construction' => 'sides_full',
+    'top_construction' => 'full',
+    'back_construction' => 'full',
+    'rail_width' => 100,
+    'drawer_thickness' => 12,
+    'drawer_bottom' => 12,
     'back' => 6,
     'front' => 18,
     'toe' => 100,
@@ -107,7 +112,8 @@ module KeroCabinet
     c['name'] = 'Parametric Cabinet' if c['name'].empty?
     {
       'width' => [300, 5000], 'height' => [350, 3500], 'depth' => [250, 1200],
-      'panel' => [9, 36], 'back' => [3, 24], 'front' => [9, 32],
+      'rail_width' => [40, 200], 'drawer_thickness' => [6, 30],
+      'drawer_bottom' => [3, 24], 'panel' => [9, 36], 'back' => [3, 24], 'front' => [9, 32],
       'toe' => [0, 250], 'timber_height' => [20, 200],
       'timber_thickness' => [10, 100], 'frame_width' => [25, 90],
       'frame_depth' => [12, 36], 'gap' => [1, 6]
@@ -115,6 +121,12 @@ module KeroCabinet
     c['construction'] = c['construction'].to_s
     unless %w[sides_full top_bottom_full].include?(c['construction'])
       raise ArgumentError, 'Construction must use full-height sides or full-width top and bottom panels.'
+    end
+    %w[top_construction back_construction].each do |key|
+      raise ArgumentError, "#{key}: choose full or rails." unless %w[full rails].include?(c[key])
+    end
+    if c['top_construction'] == 'rails' || c['back_construction'] == 'rails'
+      c['construction'] = 'sides_full'
     end
     c['toe_frame'] = (c['toe_frame'] == true)
     if c['toe_frame'] && c['toe'] > 0 && c['toe'] < c['timber_height']
@@ -127,8 +139,16 @@ module KeroCabinet
       raise ArgumentError, 'Height is insufficient for the toe kick and top/bottom sections.'
     end
     frame_depth = c['frame'] ? c['frame_depth'] : 0.0
-    if c['depth'] - c['back'] - frame_depth < 190
+    if c['depth'] - (c['back_construction'] == 'full' ? c['back'] : 0) - frame_depth < 190
       raise ArgumentError, 'Case depth is too small.'
+    end
+    case_rear = c['depth'] - (c['back_construction'] == 'full' ? c['back'] : 0)
+    rear_limit = case_rear - (c['back_construction'] == 'rails' ? c['panel'] : 0)
+    if c['top_construction'] == 'rails' && rear_limit - frame_depth <= 2 * c['rail_width']
+      raise ArgumentError, 'Top support rails need more depth or a smaller rail width.'
+    end
+    if c['back_construction'] == 'rails' && c['height'] - c['toe'] - 2 * c['panel'] <= 2 * c['rail_width']
+      raise ArgumentError, 'Back support rails need more height or a smaller rail width.'
     end
     unless c['bays'].is_a?(Array) && c['bays'].length.between?(1, 6)
       raise ArgumentError, 'Between 1 and 6 vertical bays are required.'
@@ -199,7 +219,7 @@ module KeroCabinet
 
   def generate_parts(entities, c, model)
     w, h, d = c.values_at('width', 'height', 'depth')
-    d -= c['back'] # Input depth includes the externally applied back panel.
+    d -= c['back'] if c['back_construction'] == 'full'
     t, bt, ft, toe = c.values_at('panel', 'back', 'front', 'toe')
     face_frame = c['frame']
     fw = face_frame ? c['frame_width'] : 0.0
@@ -215,13 +235,14 @@ module KeroCabinet
     # The back thickness is reserved within the requested overall depth.
     # The back is applied OUTSIDE the carcass, not captured between its parts.
     # This also keeps top and bottom flush with the rear edge of the side panels.
-    depth_inside = d - fd
+    rear_inside = d - (c['back_construction'] == 'rails' ? t : 0)
+    depth_inside = rear_inside - fd
     if c['construction'] == 'sides_full'
       # Long sides: top/bottom fit BETWEEN sides.
       add.call('Left side', 'Case', 0, fd, toe, t, d - fd, h - toe)
       add.call('Right side', 'Case', w - t, fd, toe, t, d - fd, h - toe)
-      add.call('Bottom panel', 'Case', t, fd, toe, w - 2*t, depth_inside, t)
-      add.call('Top panel', 'Case', t, fd, h - t, w - 2*t, depth_inside, t)
+      add.call('Bottom panel', 'Case', t, fd, toe, w - 2*t, d - fd, t)
+      add.call('Top panel', 'Case', t, fd, h - t, w - 2*t, d - fd, t) if c['top_construction'] == 'full'
     else
       # Long horizontals: top/bottom span full width; sides fit BETWEEN them.
       add.call('Bottom panel', 'Case', 0, fd, toe, w, depth_inside, t)
@@ -229,7 +250,18 @@ module KeroCabinet
       add.call('Left side', 'Case', 0, fd, toe + t, t, d - fd, h - toe - 2*t)
       add.call('Right side', 'Case', w - t, fd, toe + t, t, d - fd, h - toe - 2*t)
     end
-    add.call('Back panel', 'Back panel', 0, d, toe, w, bt, h - toe)
+    rail = c['rail_width']
+    if c['top_construction'] == 'rails'
+      add.call('Top front support rail', 'Case', t, fd, h - t, w - 2*t, rail, t)
+      add.call('Top rear support rail', 'Case', t, rear_inside - rail, h - t, w - 2*t, rail, t)
+    end
+    if c['back_construction'] == 'full'
+      add.call('Back panel', 'Back panel', 0, d, toe, w, bt, h - toe)
+    else
+      upper = c['top_construction'] == 'full' ? h - t : h
+      add.call('Back upper support rail', 'Case', t, d - t, upper - rail, w - 2*t, t, rail)
+      add.call('Back lower support rail', 'Case', t, d - t, toe + t, w - 2*t, t, rail)
+    end
     if toe > 0
       recess = [65.0, (d-fd)/3.0].min
       add.call('Toe kick front', 'Case', 0, fd + recess, 0, w, t, toe)
@@ -297,7 +329,7 @@ module KeroCabinet
         # Inset doors occupy case depth. Keep shelves behind the door back,
         # with the configured gap, while preserving their rear alignment.
         shelf_y = c['style'] == 'inset' ? [fd, front_y + ft + g].max : fd
-        shelf_depth = d - shelf_y
+        shelf_depth = rear_inside - shelf_y
         count = bay['doors']
         item_width = (front_width - (count - 1)*g) / count
         count.times do |j|
@@ -318,25 +350,29 @@ module KeroCabinet
           z_front = front_bottom + j*(cell+g)
           add.call("Bay #{i+1} drawer front #{j+1}", 'Door / drawer front',
                    front_left, front_y, z_front, front_width, ft, cell)
-          # Nominal 12 mm drawer box; deliberate side clearances, no runners.
+          # Preserve outer box dimensions and runner clearances as stock changes.
           side_clearance = 12.5
           dbx = cavity_left + side_clearance
           dbw = cavity_width - 2*side_clearance
           dby = fd + 18
-          dbd = d - 25 - dby
+          dbd = rear_inside - 25 - dby
           dbh = [125.0, cell - 25.0].min
           wanted_z = z_front + [12.0, (cell-dbh)/2].max
           # Respect carcass bottom and top even when an overlay front covers the rails.
           dbz = [[wanted_z, cavity_bottom + 4].max, cavity_top - dbh - 4].min
-          dt = 12.0
+          dt = c['drawer_thickness']
+          bottom_t = c['drawer_bottom']
           raise ArgumentError, 'Insufficient internal space for the drawer box.' if dbw < 80 || dbd < 100 || dbh < 60
+          if dbw - 2*dt <= 0.25 || dbd - 2*dt <= 0.25 || dbh - bottom_t <= 0.25
+            raise ArgumentError, 'Drawer stock is too thick for the available box dimensions.'
+          end
           tag = "Bay #{i+1} drawer #{j+1}"
           add.call("#{tag} left side", 'Drawer box', dbx, dby, dbz, dt, dbd, dbh)
           add.call("#{tag} right side", 'Drawer box', dbx+dbw-dt, dby, dbz, dt, dbd, dbh)
           add.call("#{tag} front rail", 'Drawer box', dbx+dt, dby, dbz, dbw-2*dt, dt, dbh)
           add.call("#{tag} back rail", 'Drawer box', dbx+dt, dby+dbd-dt, dbz, dbw-2*dt, dt, dbh)
           add.call("#{tag} bottom", 'Drawer box', dbx+dt, dby+dt, dbz,
-                   dbw-2*dt, dbd-2*dt, dt)
+                   dbw-2*dt, dbd-2*dt, bottom_t)
         end
       when 'open'
         bay['shelves'].times do |j|
@@ -352,7 +388,7 @@ module KeroCabinet
   # At the default 100 mm toe height the upright 100 mm timbers sit on the floor.
   def generate_toe_frame(add, c, bounds, front_offset)
     w, d, toe = c.values_at('width', 'depth', 'toe')
-    d -= c['back']
+    d -= c['back'] if c['back_construction'] == 'full'
     height, thickness = c.values_at('timber_height', 'timber_thickness')
     recess = [65.0, (d - front_offset) / 3.0].min
     front_y = front_offset + recess + c['panel']
@@ -475,7 +511,7 @@ module KeroCabinet
       </style>
       </head>
       <body>
-      <header><h1>Kero Cabinet</h1><p>Parametric SketchUp cabinet builder - v0.4.2</p></header>
+      <header><h1>Kero Cabinet</h1><p>Parametric SketchUp cabinet builder - v0.5.0</p></header>
       <main>
         <section class="section">
           <h2>Case dimensions</h2>
@@ -502,6 +538,15 @@ module KeroCabinet
             <div><label for="timber_thickness">Timber thickness (mm)</label><input id="timber_thickness" type="number" min="10" max="100"></div>
           </div>
           <p class="hint">Default: 50 x 100 mm timber with 100 mm upright. Butt joints, full-width front/rear rails and cross rails at bay boundaries, with extra rails for spans over 600 mm. The front panel spans the full cabinet width. The frame sits behind the toe kick front; taller toe spaces receive legs. No frame is created at zero toe height.</p>
+        </section>
+        <section class="section">
+          <h2>Top &amp; back construction</h2>
+          <div class="grid">
+            <div><label for="top_construction">Top construction</label><select id="top_construction" onchange="updateConstruction()"><option value="full">Full panel</option><option value="rails">Support rails</option></select></div>
+            <div><label for="back_construction">Back construction</label><select id="back_construction" onchange="updateConstruction()"><option value="full">Full panel</option><option value="rails">Support rails</option></select></div>
+            <div><label for="rail_width">Rail width (mm)</label><input id="rail_width" type="number" min="40" max="200"></div>
+          </div>
+          <p class="hint">Support rails use the case material and thickness. Rails require full-height sides. With back rails, no external back thickness is deducted from the overall depth.</p>
         </section>
         <section class="section">
           <h2>Case construction</h2>
@@ -547,6 +592,14 @@ module KeroCabinet
           <div class="check"><input id="frame" type="checkbox" onchange="updateFrame()"><label for="frame">Create face frame</label></div>
         </section>
         <section class="section">
+          <h2>Drawer construction</h2>
+          <div class="grid two">
+            <div><label for="drawer_thickness">Drawer box thickness (mm)</label><input id="drawer_thickness" type="number" min="6" max="30"></div>
+            <div><label for="drawer_bottom">Drawer bottom thickness (mm)</label><input id="drawer_bottom" type="number" min="3" max="24"></div>
+          </div>
+          <p class="hint">Box sides and front/back members share the box thickness. The bottom fits between them. Visible drawer fronts use Door/front thickness. Outer box size and runner clearances stay unchanged.</p>
+        </section>
+        <section class="section">
           <h2>Vertical bays</h2>
           <p class="hint" style="margin:0 0 10px">Each bay can contain doors, drawers, or open shelves. Weights determine the relative bay widths.</p>
           <div id="bays"></div>
@@ -557,13 +610,20 @@ module KeroCabinet
       <script>
         const initial = /* INITIAL_CONFIG */ null;
         let bays = JSON.parse(JSON.stringify(initial.bays));
-        const ids = ['name','width','height','depth','panel','back','front','toe','gap','style','frame_width','frame_depth','timber_height','timber_thickness'];
+        const ids = ['name','width','height','depth','panel','back','front','toe','gap','style','frame_width','frame_depth','timber_height','timber_thickness','top_construction','back_construction','rail_width','drawer_thickness','drawer_bottom'];
         for (const id of ids) document.getElementById(id).value = initial[id];
         document.getElementById('frame').checked = !!initial.frame;
         document.getElementById('toe_frame').checked = !!initial.toe_frame;
         (document.querySelector('input[name=construction][value="'+(initial.construction||'sides_full')+'"]') || document.querySelector('input[name=construction][value=sides_full]')).checked = true;
         const n = (v) => Number(v);
         const escapeHtml = (s) => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+        function updateConstruction(){
+          const rails=['top_construction','back_construction'].some(id=>document.getElementById(id).value==='rails');
+          if(rails) document.querySelector('input[name=construction][value=sides_full]').checked=true;
+          for(const radio of document.querySelectorAll('input[name=construction]')) radio.disabled=rails;
+          document.getElementById('rail_width').disabled=!rails;
+          document.getElementById('back').disabled=document.getElementById('back_construction').value==='rails';
+        }
         function updateFrame(){
           for(const id of ['frame_width','frame_depth']) document.getElementById(id).disabled = !document.getElementById('frame').checked;
         }
@@ -587,7 +647,7 @@ module KeroCabinet
         function showError(message){ document.getElementById('error').textContent=message; }
         function submitConfig(){
           showError('');
-          const c={}; for(const id of ids) c[id]=id==='name'||id==='style'?document.getElementById(id).value:n(document.getElementById(id).value);
+          const c={}; for(const id of ids) c[id]=['name','style','top_construction','back_construction'].includes(id)?document.getElementById(id).value:n(document.getElementById(id).value);
           c.toe_frame=document.getElementById('toe_frame').checked;
           c.frame=document.getElementById('frame').checked;
           c.construction=document.querySelector('input[name=construction]:checked').value;
@@ -595,7 +655,7 @@ module KeroCabinet
           if(!window.sketchup || !window.sketchup.submit) return showError('This panel must be used inside SketchUp.');
           window.sketchup.submit(JSON.stringify(c));
         }
-        updateFrame();renderBays();
+        updateFrame();updateConstruction();renderBays();
       </script>
       </body>
       </html>

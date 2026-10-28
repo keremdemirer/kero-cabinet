@@ -23,8 +23,8 @@ jobs:
           ruby -c test/geometry_test.rb
           ruby -c kero_cabinet/updater.rb
           ruby -c test/updater_test.rb
-      - name: Geometry tests
-        run: ruby test/geometry_test.rb
+      - name: Geometry and construction tests
+        run: ruby test/construction_test.rb
       - name: Updater tests
         run: ruby test/updater_test.rb
       - name: Package SketchUp RBZ
