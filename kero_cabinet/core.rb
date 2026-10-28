@@ -1,5 +1,5 @@
 # frozen_string_literal: true
-# Kero Cabinet v0.14.0, SketchUp 2020+; all design inputs use millimetres.
+# Kero Cabinet v0.15.0, SketchUp 2020+; all design inputs use millimetres.
 require 'sketchup.rb'
 require 'json'
 require_relative 'updater'
@@ -9,7 +9,7 @@ module KeroCabinet
 
   %i[DICT VERSION DEFAULT DRAWER_SLIDES].each { |name| remove_const(name) if const_defined?(name, false) }
   DICT = 'kero_cabinet'.freeze
-  VERSION = '0.14.0'.freeze
+  VERSION = '0.15.0'.freeze
 
   DEFAULT = {
     'name' => 'Parametric Cabinet',
@@ -31,6 +31,11 @@ module KeroCabinet
     'drawer_height_limit' => 125,
     'back' => 6,
     'front' => 18,
+    'base_type' => 'timber',
+    'caster_height' => 100,
+    'caster_diameter' => 75,
+    'caster_inset' => 30,
+    'caster_front_brakes' => true,
     'toe' => 100,
     'toe_frame' => true,
     'worktop' => false,
@@ -170,6 +175,35 @@ module KeroCabinet
     length
   end
 
+  def base_height(c)
+    case c['base_type']
+    when 'none' then 0.0
+    when 'casters' then c['caster_height']
+    else c['toe']
+    end
+  end
+
+  def caster_dimensions(c)
+    diameter = c['caster_diameter']
+    { plate_length: [76.0,diameter].max, plate_width: 60.0,
+      wheel_width: [[diameter*0.3,18.0].max,40.0].min }
+  end
+
+  def caster_positions(c)
+    dims = caster_dimensions(c)
+    side = c['bottom_construction'] == 'full' ? 0 : c['panel']
+    front = c['frame'] ? c['frame_depth'] : 0
+    rear = case_depth(c)
+    left_x = side + c['caster_inset'] + dims[:plate_length]/2
+    right_x = c['width'] - side - c['caster_inset'] - dims[:plate_length]/2
+    front_y = front + c['caster_inset'] + dims[:plate_width]/2
+    rear_y = rear - c['caster_inset'] - dims[:plate_width]/2
+    if right_x-left_x < dims[:plate_length]+1 || rear_y-front_y < dims[:plate_width]+1
+      raise ArgumentError, 'Caster plates do not fit the bottom panel. Reduce edge inset/wheel diameter or increase cabinet width/depth.'
+    end
+    [[left_x,front_y,true],[right_x,front_y,true],[left_x,rear_y,false],[right_x,rear_y,false]]
+  end
+
   def case_height(c)
     c['height'] - (c['worktop'] ? c['worktop_thickness'] : 0)
   end
@@ -200,6 +234,7 @@ module KeroCabinet
       'worktop_thickness' => [6,100], 'worktop_front_overhang' => [0,300],
       'worktop_rear_overhang' => [0,300], 'worktop_left_overhang' => [0,300], 'worktop_right_overhang' => [0,300],
       'drawer_height_limit' => [25, 3000], 'drawer_rear_gap' => [3, 50], 'drawer_bottom' => [3, 24], 'panel' => [9, 36], 'back' => [3, 24], 'front' => [9, 32],
+      'caster_height' => [35,400], 'caster_diameter' => [20,250], 'caster_inset' => [0,150],
       'toe' => [0, 250], 'timber_height' => [20, 200],
       'timber_thickness' => [10, 100], 'frame_width' => [25, 90],
       'frame_depth' => [12, 36], 'gap' => [1, 6]
@@ -240,15 +275,24 @@ module KeroCabinet
       normalized = validate_worktop(cabinet_worktop_config(c))
       c['worktop_material'] = normalized['material']
     end
+    unless %w[none timber casters].include?(c['base_type'])
+      raise ArgumentError, 'Choose No base, Timber toe kick, or Casters.'
+    end
+    c['caster_front_brakes'] = c['caster_front_brakes'] == true
+    if c['base_type'] == 'casters'
+      if c['caster_height'] < c['caster_diameter'] + 12
+        raise ArgumentError, 'Caster mounting height must exceed wheel diameter by at least 12 mm for the representative bracket.'
+      end
+    end
     c['toe_frame'] = (c['toe_frame'] == true)
-    if c['toe_frame'] && c['toe'] > 0 && c['toe'] < c['timber_height']
+    if c['base_type'] == 'timber' && c['toe_frame'] && c['toe'] > 0 && c['toe'] < c['timber_height']
       raise ArgumentError, 'Toe kick height must be at least the upright timber height, or disable the support frame.'
     end
     c['frame'] = (c['frame'] == true)
     c['style'] = c['style'].to_s
     raise ArgumentError, 'Door style must be inset or overlay.' unless %w[inset overlay].include?(c['style'])
-    if c['toe'] + 2 * [c['panel'], (c['frame'] ? c['frame_width'] : 0)].max >= case_height(c)
-      raise ArgumentError, 'Height is insufficient for the toe kick and top/bottom sections.'
+    if base_height(c) + 2 * [c['panel'], (c['frame'] ? c['frame_width'] : 0)].max >= case_height(c)
+      raise ArgumentError, 'Height is insufficient for the selected base and top/bottom sections.'
     end
     frame_depth = c['frame'] ? c['frame_depth'] : 0.0
     if case_depth(c) - frame_depth < 190
@@ -259,7 +303,7 @@ module KeroCabinet
     if c['top_construction'] == 'rails' && rear_limit - frame_depth <= 2 * c['rail_width']
       raise ArgumentError, 'Top support rails need more depth or a smaller rail width.'
     end
-    if c['back_construction'] == 'rails' && case_height(c) - c['toe'] - 2 * c['panel'] <= 2 * c['rail_width']
+    if c['back_construction'] == 'rails' && case_height(c) - base_height(c) - 2 * c['panel'] <= 2 * c['rail_width']
       raise ArgumentError, 'Back support rails need more height or a smaller rail width.'
     end
     unless c['bays'].is_a?(Array) && c['bays'].length.between?(1, 6)
@@ -275,6 +319,7 @@ module KeroCabinet
         bay['sections'].each { |section| validate_bay_item(section, false) }
       end
     end
+    caster_positions(c) if c['base_type'] == 'casters'
     total = c['bays'].sum { |b| b['weight'] }
     widths = c['bays'].map { |b| c['width'] * b['weight'] / total }
     minimum = c['panel'] * 2 + (c['frame'] ? c['frame_width'] : 0) + 110
@@ -378,6 +423,7 @@ module KeroCabinet
     h = case_height(c)
     d = case_depth(c)
     t, bt, ft, toe = c.values_at('panel', 'back', 'front', 'toe')
+    toe = base_height(c)
     face_frame = c['frame']
     fw = face_frame ? c['frame_width'] : 0.0
     fd = face_frame ? c['frame_depth'] : 0.0
@@ -418,7 +464,7 @@ module KeroCabinet
       add.call('Back upper support rail', 'Case', t, d - t, upper - rail, w - 2*t, t, rail)
       add.call('Back lower support rail', 'Case', t, d - t, toe + t, w - 2*t, t, rail)
     end
-    if toe > 0
+    if c['base_type'] == 'timber' && toe > 0
       recess = [65.0, (d-fd)/3.0].min
       add.call('Toe kick front', 'Case', 0, fd + recess, 0, w, t, toe)
     end
@@ -429,7 +475,8 @@ module KeroCabinet
     bounds[-1] = w
     n = c['bays'].length
 
-    generate_toe_frame(add, c, bounds, fd) if c['toe_frame'] && toe > 0
+    generate_toe_frame(add, c, bounds, fd) if c['base_type'] == 'timber' && c['toe_frame'] && toe > 0
+    generate_casters(entities, c, model) if c['base_type'] == 'casters'
 
     # Full-height intermediate panels and face-frame stiles align with bays.
     (1...n).each do |i|
@@ -657,6 +704,48 @@ module KeroCabinet
         add.call("Toe frame leg #{i + 1} #{j == 0 ? 'front' : 'rear'}", 'Toe kick timber',
           x - leg_width / 2, y, 0, leg_width, thickness, z)
       end
+    end
+  end
+
+  def hardware_box(entities, x, y, z, width, depth, height)
+    points = [[x,y,z],[x+width,y,z],[x+width,y+depth,z],[x,y+depth,z]].map { |point| point.map { |v| mm(v) } }
+    face = entities.add_face(points)
+    raise 'Could not create caster geometry.' unless face
+    face.reverse! unless face.normal.samedirection?(Z_AXIS)
+    face.pushpull(mm(height))
+  end
+
+  # A representative caster, not a manufacturer mounting/drilling model.
+  def generate_casters(entities, c, model)
+    dims = caster_dimensions(c)
+    height, diameter, width = c['caster_height'], c['caster_diameter'], dims[:wheel_width]
+    material = model.materials['Caster Hardware'] || model.materials.add('Caster Hardware')
+    material.color = Sketchup::Color.new(90,96,100)
+    caster_positions(c).each_with_index do |(x,y,front),index|
+      brake = front && c['caster_front_brakes']
+      key = "caster-v1:#{height}:#{diameter}:#{brake}"
+      definition = model.definitions.find { |item| item.get_attribute(DICT,'stock_key') == key }
+      unless definition
+        definition = model.definitions.add("Caster Hardware - #{stock_number(height)} mm#{brake ? ' brake' : ''}")
+        definition.set_attribute(DICT,'stock_key',key)
+        definition.description = 'Representative caster hardware. Verify actual mounting height, footprint, fixings and load rating with the supplier.'
+        raw = definition.entities
+        hardware_box(raw,-dims[:plate_length]/2,-dims[:plate_width]/2,height-4,dims[:plate_length],dims[:plate_width],4)
+        fork_width = [diameter*0.25,25].min
+        [-width/2-5,width/2+2].each do |fork_y|
+          hardware_box(raw,-fork_width/2,fork_y,diameter/2,fork_width,3,height-4-diameter/2)
+        end
+        edges = raw.add_circle([0,mm(-width/2),mm(diameter/2)],Y_AXIS,mm(diameter/2),24)
+        face = raw.add_face(edges)
+        raise 'Could not create caster wheel.' unless face
+        face.reverse! unless face.normal.samedirection?(Y_AXIS)
+        face.pushpull(mm(width))
+        hardware_box(raw,diameter*0.2,-width/2,diameter+2,diameter*0.25,width,3) if brake
+      end
+      part = entities.add_instance(definition,Geom::Transformation.new([mm(x),mm(y),0]))
+      part.name = "#{front ? 'Front' : 'Rear'} #{index.even? ? 'left' : 'right'} caster#{brake ? ' (brake)' : ''}"
+      part.material = material
+      part.set_attribute(DICT,'part_name',part.name)
     end
   end
 
@@ -929,18 +1018,19 @@ module KeroCabinet
         .type-picker{display:flex;gap:4px;background:#f1f2ed;padding:4px;border-radius:8px;flex-wrap:wrap;margin:10px 0 12px}.type-picker button{flex:1;border:0;border-radius:5px;padding:8px 6px;background:transparent;color:#60665a;font-size:12px;cursor:pointer;white-space:nowrap}.type-picker button.active{background:#fff;color:#285e40;box-shadow:0 1px 4px #0002;font-weight:700}.type-picker button:focus-visible,.preset:focus-visible{outline:2px solid #3c7354;outline-offset:2px}
         .layout-tools{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:12px 0}.layout-tools span{font-size:11px;color:#73776e}.preset{border:1px solid #d7dcd2;border-radius:6px;background:#f7f9f4;padding:7px 8px;cursor:pointer;font-size:11px;color:#40583e}.section-layout{display:grid;grid-template-columns:76px minmax(0,1fr);gap:12px;align-items:start}.cabinet-preview{display:flex;flex-direction:column;border:3px solid #c4b598;border-radius:3px;background:#e9e2d5;min-height:210px;overflow:hidden}.preview-cell{border:0;border-bottom:2px solid #c4b598;background:#eee8dc;color:#5d5343;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:9px 2px;font-size:10px;min-height:35px;gap:4px}.preview-cell:last-child{border-bottom:0}.preview-cell.drawer{background:#ded2ba}.preview-cell.open{background:#f8f5ed}.preview-cell strong{font-size:11px}.stack-item{border:1px solid #e1e4da;border-left:3px solid #91a684;border-radius:8px;padding:12px;margin-bottom:10px;scroll-margin-top:15px;background:#fafbf8}.stack-head{display:flex;justify-content:space-between;align-items:center;gap:5px}.stack-title{font-size:12px;font-weight:700}.position-tag{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:#7d8575;display:block;margin-bottom:3px}.stack-actions{display:flex;gap:3px}.stack-actions button{border:1px solid #dce0d5;background:#fff;border-radius:5px;padding:5px 7px;cursor:pointer;font-size:12px}.stack-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.share-line{display:flex;align-items:center;justify-content:space-between;gap:5px;margin-bottom:4px}.share-line label{margin:0}.share-badge{font-size:11px;font-weight:700;color:#3c7354}.add-section{width:100%;padding:10px;border:1px dashed #a7b89d;border-radius:6px;background:#f6f9f2;color:#405b35;cursor:pointer}.bay-width{display:flex;align-items:center;gap:10px;padding:8px 0}.bay-width label{margin:0;white-space:nowrap}.bay-width input{max-width:95px}.bay-width span{font-size:11px;color:#73776e}.section-intro{font-size:11px;line-height:1.5;color:#6c7364;margin:8px 0 12px}@media(max-width:520px){.section-layout{grid-template-columns:1fr}.cabinet-preview{display:none}.type-picker button{font-size:11px}.stack-actions button{padding:5px}}
 
-        [hidden]{display:none!important}body{background:#f1f2ee;color:#253027}.editor-header{display:flex;justify-content:space-between;align-items:center;gap:12px;background:#253b30;padding:18px 22px}.editor-header h1{font-size:19px;letter-spacing:-.3px}.editor-header p{font-size:12px;color:#c7d4c7}.version-tag{font-size:11px;white-space:nowrap;color:#d7e4d5;border:1px solid #617463;border-radius:20px;padding:5px 9px}.editor-tabs{display:grid;grid-template-columns:1.25fr 1fr 1fr 1.2fr;gap:5px;padding:10px 18px;background:#f8f9f5;border-bottom:1px solid #dce2d5;position:sticky;top:0;z-index:5}.editor-tabs button{border:0;background:transparent;border-radius:7px;color:#697465;padding:10px 5px;font-size:12px;font-weight:600;cursor:pointer}.editor-tabs button[aria-selected=true]{background:#fff;color:#264d35;box-shadow:0 1px 5px #1a30251a}.editor-tabs button:focus-visible{outline:2px solid #68865c;outline-offset:1px}main{padding:16px 18px 130px}.section{border-color:#dfe5d8;border-radius:12px;padding:18px;margin-bottom:14px}.section h2{font-size:14px;letter-spacing:-.1px;margin-bottom:16px}.grid{gap:13px}.name-field{grid-column:1/-1}label{font-size:11px;color:#626d5c}input,select{border-color:#d4ddcc;border-radius:7px;height:38px;background:#fff}input:focus,select:focus{outline:2px solid #b5c9a8;outline-offset:1px}.advanced{border-top:1px solid #e5e9df;margin-top:16px;padding-top:12px}.advanced>summary{cursor:pointer;color:#49613d;font-size:12px;font-weight:600;margin-bottom:12px}.help-details{margin-top:12px}.help-details>summary{font-size:11px;color:#788471;cursor:pointer}.help-details .hint{background:#f6f8f2;padding:10px;border-radius:7px}.construction-card svg{height:72px;max-width:110px}.construction-card{padding:10px}.construction-card small{font-size:10px}.actions{padding:10px 18px 13px;display:block;z-index:10;box-shadow:0 -3px 16px #253b3009;border-color:#dce4d3}.editor-summary{font-size:11px;line-height:1.5;color:#67765e;padding:0 0 8px;border-bottom:1px solid #edf0e8;margin-bottom:9px}.action-row{display:flex;align-items:center;justify-content:space-between;gap:12px}.error{font-size:11px;max-height:64px;overflow:auto}.primary{white-space:nowrap;padding:12px 22px;background:#355e40}.check{background:#f4f7ef;padding:10px;border-radius:7px}.stack-item{background:#fafbf7}.bay{border-color:#dde5d5}.preset{background:#f5f8ef}.type-picker{background:#edf2e6}@media(max-width:540px){.editor-header{padding:14px}.editor-header p{max-width:230px;font-size:11px}.editor-tabs{padding:8px 10px;gap:2px}.editor-tabs button{font-size:11px}main{padding:12px 10px 140px}.section{padding:14px}.actions{padding:9px 12px}.primary{padding:11px 16px}.version-tag{font-size:10px}}
+        [hidden]{display:none!important}body{background:#f1f2ee;color:#253027}.editor-header{display:flex;justify-content:space-between;align-items:center;gap:12px;background:#253b30;padding:18px 22px}.editor-header h1{font-size:19px;letter-spacing:-.3px}.editor-header p{font-size:12px;color:#c7d4c7}.version-tag{font-size:11px;white-space:nowrap;color:#d7e4d5;border:1px solid #617463;border-radius:20px;padding:5px 9px}.editor-tabs{display:grid;grid-template-columns:1.3fr 1fr 1fr .8fr 1fr;gap:5px;padding:10px 18px;background:#f8f9f5;border-bottom:1px solid #dce2d5;position:sticky;top:0;z-index:5}.editor-tabs button{border:0;background:transparent;border-radius:7px;color:#697465;padding:10px 5px;font-size:12px;font-weight:600;cursor:pointer}.editor-tabs button[aria-selected=true]{background:#fff;color:#264d35;box-shadow:0 1px 5px #1a30251a}.editor-tabs button:focus-visible{outline:2px solid #68865c;outline-offset:1px}main{padding:16px 18px 130px}.section{border-color:#dfe5d8;border-radius:12px;padding:18px;margin-bottom:14px}.section h2{font-size:14px;letter-spacing:-.1px;margin-bottom:16px}.grid{gap:13px}.name-field{grid-column:1/-1}label{font-size:11px;color:#626d5c}input,select{border-color:#d4ddcc;border-radius:7px;height:38px;background:#fff}input:focus,select:focus{outline:2px solid #b5c9a8;outline-offset:1px}.advanced{border-top:1px solid #e5e9df;margin-top:16px;padding-top:12px}.advanced>summary{cursor:pointer;color:#49613d;font-size:12px;font-weight:600;margin-bottom:12px}.help-details{margin-top:12px}.help-details>summary{font-size:11px;color:#788471;cursor:pointer}.help-details .hint{background:#f6f8f2;padding:10px;border-radius:7px}.construction-card svg{height:72px;max-width:110px}.construction-card{padding:10px}.construction-card small{font-size:10px}.actions{padding:10px 18px 13px;display:block;z-index:10;box-shadow:0 -3px 16px #253b3009;border-color:#dce4d3}.editor-summary{font-size:11px;line-height:1.5;color:#67765e;padding:0 0 8px;border-bottom:1px solid #edf0e8;margin-bottom:9px}.action-row{display:flex;align-items:center;justify-content:space-between;gap:12px}.error{font-size:11px;max-height:64px;overflow:auto}.primary{white-space:nowrap;padding:12px 22px;background:#355e40}.check{background:#f4f7ef;padding:10px;border-radius:7px}.stack-item{background:#fafbf7}.bay{border-color:#dde5d5}.preset{background:#f5f8ef}.type-picker{background:#edf2e6}@media(max-width:540px){.editor-header{padding:14px}.editor-header p{max-width:230px;font-size:11px}.editor-tabs{padding:8px 10px;gap:2px}.editor-tabs button{font-size:11px}main{padding:12px 10px 140px}.section{padding:14px}.actions{padding:9px 12px}.primary{padding:11px 16px}.version-tag{font-size:10px}}
         .linked-notice{margin:0;padding:10px 20px;background:#fff3d8;color:#75551d;font-size:12px;line-height:1.45}
       </style>
       </head>
       <body>
-      <header class="editor-header"><div><h1>Kero Cabinet</h1><p>Design your cabinet. Fine-tune only what you need.</p></div><span class="version-tag">v0.14.0 &middot; mm</span></header>
+      <header class="editor-header"><div><h1>Kero Cabinet</h1><p>Design your cabinet. Fine-tune only what you need.</p></div><span class="version-tag">v0.15.0 &middot; mm</span></header>
       <p id="linked-notice" class="linked-notice" hidden></p>
       <nav class="editor-tabs" role="tablist" aria-label="Cabinet settings">
         <button id="tab-size" type="button" role="tab" data-tab="size" aria-controls="panel-size" aria-selected="true" onclick="showTab('size')">Size &amp; fronts</button>
         <button id="tab-layout" type="button" role="tab" data-tab="layout" aria-controls="panel-layout" aria-selected="false" tabindex="-1" onclick="showTab('layout')">Layout</button>
         <button id="tab-build" type="button" role="tab" data-tab="build" aria-controls="panel-build" aria-selected="false" tabindex="-1" onclick="showTab('build')">Build</button>
-        <button id="tab-base" type="button" role="tab" data-tab="base" aria-controls="panel-base" aria-selected="false" tabindex="-1" onclick="showTab('base')">Base &amp; top</button>
+        <button id="tab-base" type="button" role="tab" data-tab="base" aria-controls="panel-base" aria-selected="false" tabindex="-1" onclick="showTab('base')">Base</button>
+        <button id="tab-worktop" type="button" role="tab" data-tab="worktop" aria-controls="panel-worktop" aria-selected="false" tabindex="-1" onclick="showTab('worktop')">Worktop</button>
       </nav>
       <main>
 <div id="panel-size" role="tabpanel" data-panel="size" aria-labelledby="tab-size"><section class="section">
@@ -951,7 +1041,7 @@ module KeroCabinet
             <div><label for="height">Overall height (mm)</label><input id="height" type="number" step="1"></div>
             <div><label for="depth">Overall depth (mm)</label><input id="depth" type="number" step="1"></div>
           </div>
-          <details class="help-details"><summary>How this works</summary><p class="hint">Depth includes the back and any overlay fronts. The case is shortened to keep the requested overall depth. Overall height includes the toe kick and any enabled worktop.</p></details>
+          <details class="help-details"><summary>How this works</summary><p class="hint">Depth includes the back and any overlay fronts. The case is shortened to keep the requested overall depth. Overall height includes the selected base and any enabled worktop.</p></details>
         </section><section class="section">
           <h2>Front style</h2>
           <div class="grid two">
@@ -1024,7 +1114,7 @@ module KeroCabinet
           </div>
           <details class="help-details"><summary>How this works</summary><p class="hint">Box sides and front/back members share the box thickness. The bottom fits between them. Visible drawer fronts use Door/front thickness. Outer box width follows the selected slide side clearance. Shallow box heights adapt to the opening.</p></details>
         </section></div>
-<div id="panel-base" role="tabpanel" data-panel="base" aria-labelledby="tab-base" hidden><section class="section">
+<div id="panel-base" role="tabpanel" data-panel="base" aria-labelledby="tab-base" hidden><section class="section"><h2>Base</h2><label for="base_type">Base type</label><select id="base_type" onchange="updateToeKick()"><option value="none">No base</option><option value="timber">Timber toe kick</option><option value="casters">Casters</option></select><p class="hint">Overall height includes the selected base and any enabled worktop. No base starts the cabinet at floor level.</p></section><div id="timber-base"><section class="section">
           <h2>Toe kick</h2>
           <div class="grid two">
             <div><label for="toe">Toe kick height (mm)</label><input id="toe" type="number" step="1"></div>
@@ -1035,7 +1125,12 @@ module KeroCabinet
             <div><label for="timber_thickness">Timber thickness (mm)</label><input id="timber_thickness" type="number" min="10" max="100"></div>
           </div>
           <details class="help-details"><summary>How this works</summary><p class="hint">Default: 50 x 100 mm timber with 100 mm upright. Butt joints, full-width front/rear rails and cross rails at bay boundaries, with extra rails for spans over 600 mm. The front panel spans the full cabinet width. The frame sits behind the toe kick front; taller toe spaces receive legs. No frame is created at zero toe height.</p></details>
-        </section><section class="section">
+        </section></div><section class="section" id="caster-fields" hidden><h2>Casters</h2><div class="grid two">
+          <div><label for="caster_height">Mounting height (mm)</label><input id="caster_height" type="number" min="35" max="400"></div>
+          <div><label for="caster_diameter">Wheel diameter (mm)</label><input id="caster_diameter" type="number" min="20" max="250"></div>
+          <div><label for="caster_inset">Plate edge inset (mm)</label><input id="caster_inset" type="number" min="0" max="150"></div></div>
+          <div class="check"><input id="caster_front_brakes" type="checkbox"><label for="caster_front_brakes">Front two casters with brakes</label></div>
+          <p class="hint">Four representative corner casters. Mounting height is plate-to-floor, not wheel diameter. Plates sit under the bottom panel. No toe kick panel or timber frame is generated. Confirm the actual product footprint, mounting strength and load rating; drilling and movement are not modeled.</p></section></div><div id="panel-worktop" role="tabpanel" data-panel="worktop" aria-labelledby="tab-worktop" hidden><section class="section">
           <h2>Worktop</h2>
           <div class="check"><input id="worktop" type="checkbox" onchange="updateWorktop()"><label for="worktop">Create worktop for this cabinet</label></div>
           <div id="worktop-fields" class="grid two" style="margin-top:12px">
@@ -1056,11 +1151,12 @@ module KeroCabinet
         document.getElementById('linked-notice').hidden=linkedCount<1;
         document.getElementById('linked-notice').textContent=`Linked cabinet: Apply to model updates all ${linkedCount} linked copies. Positions stay separate. Reopen other editors after applying to avoid stale settings.`;
         let bays = JSON.parse(JSON.stringify(initial.bays));
-        const ids = ['name','width','height','depth','panel','back','front','toe','gap','style','frame_width','frame_depth','timber_height','timber_thickness','top_construction','bottom_construction','back_construction','rail_width','drawer_thickness','drawer_bottom','drawer_slide','undermount_length','drawer_rear_gap','drawer_height_mode','drawer_height_limit','worktop_thickness','worktop_material','worktop_front_overhang','worktop_rear_overhang','worktop_left_overhang','worktop_right_overhang'];
+        const ids = ['name','width','height','depth','panel','back','front','toe','gap','style','frame_width','frame_depth','timber_height','timber_thickness','top_construction','bottom_construction','back_construction','rail_width','drawer_thickness','drawer_bottom','drawer_slide','undermount_length','drawer_rear_gap','drawer_height_mode','drawer_height_limit','worktop_thickness','worktop_material','worktop_front_overhang','worktop_rear_overhang','worktop_left_overhang','worktop_right_overhang','base_type','caster_height','caster_diameter','caster_inset'];
         for (const id of ids) document.getElementById(id).value = initial[id];
         document.getElementById('frame').checked = !!initial.frame;
         document.getElementById('toe_frame').checked = !!initial.toe_frame;
         document.getElementById('worktop').checked = !!initial.worktop;
+        document.getElementById('caster_front_brakes').checked = !!initial.caster_front_brakes;
         (document.querySelector('input[name=construction][value="'+(initial.construction||'sides_full')+'"]') || document.querySelector('input[name=construction][value=sides_full]')).checked = true;
         const n = (v) => Number(v);
         const escapeHtml = (s) => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
@@ -1079,7 +1175,12 @@ module KeroCabinet
           document.getElementById('hardware_hint').textContent=under?'TANDEM reference: 12-16 mm sides; inside width = opening minus 42 mm; 13 mm recessed bottom; 14 mm below and 6 mm above the box. Front/back members are raised to leave the underside open. Hook holes, exact rear notches, locking devices and hardware models are not generated; prepare them using the manufacturer template.':'Side-mount height and side-space references. Kero Cabinet reserves 4 mm above and below the box. Check actual length, width limits, mounting and holes against the hardware datasheet.';
         }
         function updateToeKick(){
-          const enabled=document.getElementById('toe_frame').checked&&Number(document.getElementById('toe').value)>0;
+          const mode=document.getElementById('base_type').value;
+          document.getElementById('timber-base').hidden=mode!=='timber';
+          document.getElementById('caster-fields').hidden=mode!=='casters';
+          document.getElementById('toe').disabled=mode!=='timber';document.getElementById('toe_frame').disabled=mode!=='timber';
+          for(const id of ['caster_height','caster_diameter','caster_inset','caster_front_brakes'])document.getElementById(id).disabled=mode!=='casters';
+          const enabled=mode==='timber'&&document.getElementById('toe_frame').checked&&Number(document.getElementById('toe').value)>0;
           document.getElementById('timber-fields').hidden=!enabled;
           for(const id of ['timber_height','timber_thickness'])document.getElementById(id).disabled=!enabled;
         }
@@ -1144,7 +1245,7 @@ module KeroCabinet
             ${b.kind==='stack'?renderSections(b,i):`<div class="stack-grid">${counts(b,`changeBay(${i},'KEY',this.value)`)}</div><p class="hint">Need drawers below doors? Choose Mixed layout above.</p>`}</div>`).join('');
           updateSummary();
         }
-        const tabOrder=['size','layout','build','base'];
+        const tabOrder=['size','layout','build','base','worktop'];
         function showTab(key){
           if(!tabOrder.includes(key))return;
           for(const id of tabOrder){
@@ -1171,13 +1272,14 @@ module KeroCabinet
           index=event.key==='Home'?0:event.key==='End'?tabOrder.length-1:(index+(event.key==='ArrowRight'?1:-1)+tabOrder.length)%tabOrder.length;
           showTab(tabOrder[index]);document.getElementById('tab-'+tabOrder[index]).focus();
         });
-        const limits={worktop_thickness:[6,100],worktop_front_overhang:[0,300],worktop_rear_overhang:[0,300],worktop_left_overhang:[0,300],worktop_right_overhang:[0,300],drawer_height_limit:[25,3000],drawer_rear_gap:[3,50],width:[300,5000],height:[350,3500],depth:[250,1200],panel:[9,36],back:[3,24],front:[9,32],toe:[0,250],timber_height:[20,200],timber_thickness:[10,100],frame_width:[25,90],frame_depth:[12,36],gap:[1,6],rail_width:[40,200],drawer_thickness:[6,30],drawer_bottom:[3,24]};
+        const limits={caster_height:[35,400],caster_diameter:[20,250],caster_inset:[0,150],worktop_thickness:[6,100],worktop_front_overhang:[0,300],worktop_rear_overhang:[0,300],worktop_left_overhang:[0,300],worktop_right_overhang:[0,300],drawer_height_limit:[25,3000],drawer_rear_gap:[3,50],width:[300,5000],height:[350,3500],depth:[250,1200],panel:[9,36],back:[3,24],front:[9,32],toe:[0,250],timber_height:[20,200],timber_thickness:[10,100],frame_width:[25,90],frame_depth:[12,36],gap:[1,6],rail_width:[40,200],drawer_thickness:[6,30],drawer_bottom:[3,24]};
         for(const [id,[min,max]] of Object.entries(limits)){const input=document.getElementById(id);input.min=min;input.max=max;input.required=true;input.title=`Allowed range: ${min}-${max} mm`;}
         document.addEventListener('wheel',event=>{if(document.activeElement?.type==='number')document.activeElement.blur();},{passive:true});
         function showError(message){
           document.getElementById('error').textContent=message;
           if(!message)return;
-          if(/toe kick|timber|worktop/i.test(message))showTab('base');
+          if(/worktop/i.test(message))showTab('worktop');
+          else if(/toe kick|timber|caster|base/i.test(message))showTab('base');
           else if(/bay|section|height ratio|drawer front/i.test(message))showTab('layout');
           else if(/hardware|slide|stock|thickness|construction|rail|drawer height limit/i.test(message))showTab('build');
         }
@@ -1190,7 +1292,8 @@ module KeroCabinet
               showError(`${label||'Number'}: enter a value from ${input.min} to ${input.max}. Current value: ${input.value||'empty'}.`);revealInput(input);return;
             }
           }
-          const c={}; for(const id of ids) c[id]=['name','style','top_construction','bottom_construction','back_construction','drawer_slide','drawer_height_mode','worktop_material'].includes(id)?document.getElementById(id).value:n(document.getElementById(id).value);
+          const c={}; for(const id of ids) c[id]=['name','style','top_construction','bottom_construction','back_construction','drawer_slide','drawer_height_mode','worktop_material','base_type'].includes(id)?document.getElementById(id).value:n(document.getElementById(id).value);
+          c.caster_front_brakes=document.getElementById('caster_front_brakes').checked;
           c.worktop=document.getElementById('worktop').checked;
           c.toe_frame=document.getElementById('toe_frame').checked;
           c.frame=document.getElementById('frame').checked;

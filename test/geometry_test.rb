@@ -6,6 +6,7 @@ def file_loaded?(_)
 end
 
 Z_AXIS = Object.new
+Y_AXIS = Object.new
 module Geom
   class Transformation
     attr_reader :origin, :scale
@@ -37,6 +38,7 @@ class MockFace
   def initialize(definition, points)
     @definition = definition
     @points = points
+    @axis = points.respond_to?(:normal_axis) ? points.normal_axis : 2
     @up = false # SketchUp ground plane faces always initially face down.
   end
   def normal
@@ -52,6 +54,11 @@ class MockFace
     @extrusion = @up ? distance : -distance
     @definition.extrusion = @extrusion
     @definition.points = @points
+    vertices = @points + @points.map { |point| copy = point.dup; copy[@axis] += @extrusion; copy }
+    low = 3.times.map { |axis| vertices.map { |point| point[axis] }.min }
+    high = 3.times.map { |axis| vertices.map { |point| point[axis] }.max }
+    @definition.mesh_min = @definition.mesh_min ? @definition.mesh_min.zip(low).map(&:min) : low
+    @definition.mesh_max = @definition.mesh_max ? @definition.mesh_max.zip(high).map(&:max) : high
   end
 end
 class MockEntities
@@ -63,6 +70,12 @@ class MockEntities
   def add_face(points)
     MockFace.new(@definition, points)
   end
+  def add_circle(center, _normal, radius, _segments)
+    points = [[center[0]-radius,center[1],center[2]],[center[0],center[1],center[2]+radius],
+      [center[0]+radius,center[1],center[2]],[center[0],center[1],center[2]-radius]]
+    def points.normal_axis; 1; end
+    points
+  end
   def add_instance(definition, transform)
     obj = MockInstance.new(definition, transform)
     @instances << obj
@@ -70,7 +83,7 @@ class MockEntities
   end
 end
 class MockDef
-  attr_accessor :description, :name, :points, :extrusion
+  attr_accessor :description, :name, :points, :extrusion, :mesh_min, :mesh_max
   attr_reader :entities
   def get_attribute(dict, key)
     (@attributes || {})[[dict,key]]
@@ -109,11 +122,11 @@ class MockInstance
     @transformation = transformation
   end
   def bounds_mm
-    o = @transformation.origin.map { |a| a*25.4 }
-    x = @definition.points.map { |p| p[0] }.max * 25.4 * @transformation.scale[0]
-    y = @definition.points.map { |p| p[1] }.max * 25.4 * @transformation.scale[1]
-    z = @definition.extrusion * 25.4 * @transformation.scale[2]
-    [o, [o[0]+x, o[1]+y, o[2]+z]]
+    low = @definition.mesh_min || [0,0,0]
+    high = @definition.mesh_max || [@definition.points.map { |p| p[0] }.max, @definition.points.map { |p| p[1] }.max, @definition.extrusion]
+    minimum = 3.times.map { |axis| (@transformation.origin[axis] + low[axis]*@transformation.scale[axis])*25.4 }
+    maximum = 3.times.map { |axis| (@transformation.origin[axis] + high[axis]*@transformation.scale[axis])*25.4 }
+    [minimum,maximum]
   end
 end
 class MockMaterials

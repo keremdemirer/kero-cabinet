@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.15.0 - 2026-10-29
+- Split Base and Worktop into separate editor tabs.
+- Add No base, Timber toe kick and Casters base modes, preserving legacy timber defaults.
+- Include the selected base and optional worktop within overall height.
+- Add four representative casters with mounting height, wheel diameter, plate inset and front-brake settings.
+- Classify caster components as Hardware and verify geometry, linked edits, editor serialization and CutList classification.
+
 ## v0.14.0 - 2026-10-29
 - Add Create linked copy and Make independent commands with context-menu support.
 - Regenerate linked cabinet families from either instance while preserving placement transforms.

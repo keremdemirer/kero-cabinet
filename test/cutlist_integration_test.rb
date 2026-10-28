@@ -52,6 +52,14 @@ class CutListIntegrationTest < Minitest::Test
       assert_equal sheet, matcher.isPartOrSheet(%w[sheet veneer plywood hardboard mdf], part.material.name), part.name
       refute matcher.isPartOrSheet(%w[part hardware], part.definition.name)
     end
+    caster_entities = MockEntities.new
+    KeroCabinet.generate_parts(caster_entities,KeroCabinet.validate_config(c.merge('base_type'=>'casters')),model)
+    casters = caster_entities.instances.select { |part| part.material.name=='Caster Hardware' }
+    assert_equal 4,casters.length
+    casters.each do |part|
+      assert matcher.isPartOrSheet(%w[part hardware],part.material.name)
+      refute matcher.isPartOrSheet(%w[sheet veneer plywood hardboard mdf],part.material.name)
+    end
     puts "Verified #{entities.instances.length} scaled instances with CutList source SHA256 #{Digest::SHA256.file(parts_path).hexdigest}."
   end
 end
