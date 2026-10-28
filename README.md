@@ -2,7 +2,7 @@
 
 **A parametric cabinet builder for SketchUp.** Enter dimensions and a bay layout to create an editable cabinet component.
 
-Version: **v0.2.2 (early development)**. The original project reports use in SketchUp 2025. Automated tests use a mock SketchUp API; they are not runtime integration tests.
+Version: **v0.3.0 (early development)**. The original project reports use in SketchUp 2025. Automated tests use a mock SketchUp API; they are not runtime integration tests.
 
 ## Features
 
@@ -22,10 +22,35 @@ The plugin does not generate cut lists. Separate part components are intended fo
 
 1. Download the RBZ from the `kero-cabinet-rbz` artifact of a successful GitHub Actions run, or build it locally.
 2. In SketchUp, open **Extensions > Extension Manager > Install Extension**.
-3. Select `Kero_Cabinet_v0.2.2.rbz` and restart SketchUp.
+3. Select `Kero_Cabinet_v0.3.0.rbz` and restart SketchUp.
 4. Choose **Extensions > Kero Cabinet > Create new cabinet...**.
 
 To edit a cabinet, select its component and choose **Kero Cabinet | Edit parameters** from the context menu, or **Edit selected cabinet...** from the extension menu.
+
+## Updates from GitHub
+
+Install v0.3.0 once using the RBZ. Future releases can be installed from
+**Extensions > Kero Cabinet > Check for updates...**, without downloading or
+installing another RBZ manually. Save your work and restart SketchUp after an update.
+
+The public `keremdemirer/kero-cabinet` repository requires no token or Git installation.
+The plugin checks `main` in the background at startup and offers newer versions.
+Disable startup checks under **Update settings...**. Startup network errors stay
+quiet; manual checks display errors. Updates always require your confirmation.
+
+Downloads use HTTPS, one fixed repository revision, and SHA-256 verification.
+Only the three plugin Ruby files listed in `update.json` can be replaced.
+Files are staged before replacement; handled installation failures restore the
+previous files. Do not close SketchUp while installation is in progress.
+The plugin directory must be writable. Symlink installations are not supported.
+The updater does not change existing cabinet geometry or save your open model.
+
+For each release, increase the version in both Ruby entry files, run
+`python3 scripts/update_manifest.py`, test, and commit all files together.
+Only version increases are offered; ordinary commits at the same version are
+not installed automatically. This is a source updater for this unsigned extension;
+it does not preserve Extension Warehouse signatures. Runtime testing in SketchUp
+is still required. Future additional plugin assets require an updater migration.
 
 ## Dimensions
 
@@ -42,9 +67,12 @@ All design inputs are in **millimetres**.
 ```text
 kero_cabinet.rb             # SketchUp extension registration
 kero_cabinet/core.rb        # Parameters, interface, and geometry
+kero_cabinet/updater.rb     # Public GitHub updates
+update.json                # Version and file checksums
 scripts/build.sh           # RBZ packaging
 scripts/check_english.py   # English text regression guard
 test/geometry_test.rb      # Mock SketchUp geometry tests
+test/updater_test.rb       # Update verification and rollback tests
 .github/workflows/ci.yml   # Tests and packaging
 CHANGELOG.md               # Release notes
 SOURCE_PROVENANCE.md       # Original file verification
@@ -59,10 +87,12 @@ python3 scripts/check_english.py
 ruby -c kero_cabinet.rb
 ruby -c kero_cabinet/core.rb
 ruby test/geometry_test.rb
+ruby test/updater_test.rb
+python3 scripts/update_manifest.py --check
 bash scripts/build.sh
 ```
 
-Output: `dist/Kero_Cabinet_v0.2.2.rbz`.
+Output: `dist/Kero_Cabinet_v0.3.0.rbz`.
 
 CI checks text, Ruby syntax, 16 geometry configurations, and archive integrity on pushes and pull requests. Successful runs upload the installation package.
 

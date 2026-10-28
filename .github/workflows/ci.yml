@@ -14,13 +14,19 @@ jobs:
           ruby-version: '3.3'
       - name: English source regression guard
         run: python3 scripts/check_english.py
+      - name: Verify update manifest
+        run: python3 scripts/update_manifest.py --check
       - name: Ruby syntax
         run: |
           ruby -c kero_cabinet.rb
           ruby -c kero_cabinet/core.rb
           ruby -c test/geometry_test.rb
+          ruby -c kero_cabinet/updater.rb
+          ruby -c test/updater_test.rb
       - name: Geometry tests
         run: ruby test/geometry_test.rb
+      - name: Updater tests
+        run: ruby test/updater_test.rb
       - name: Package SketchUp RBZ
         run: bash scripts/build.sh
       - name: Upload installation package

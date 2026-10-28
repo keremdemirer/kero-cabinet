@@ -8,13 +8,13 @@ if [[ -z "$VERSION" ]]; then
   exit 1
 fi
 
-for source in "$ROOT/kero_cabinet.rb" "$ROOT/kero_cabinet/core.rb"; do
+for source in "$ROOT/kero_cabinet.rb" "$ROOT/kero_cabinet/core.rb" "$ROOT/kero_cabinet/updater.rb"; do
   ruby -c "$source"
 done
 
 mkdir -p "$ROOT/dist"
 cd "$ROOT"
 rm -f "dist/Kero_Cabinet_v${VERSION}.rbz"
-zip -q "dist/Kero_Cabinet_v${VERSION}.rbz" kero_cabinet.rb kero_cabinet/core.rb
+zip -q "dist/Kero_Cabinet_v${VERSION}.rbz" kero_cabinet.rb kero_cabinet/core.rb kero_cabinet/updater.rb
 unzip -tq "dist/Kero_Cabinet_v${VERSION}.rbz"
 echo "Built: dist/Kero_Cabinet_v${VERSION}.rbz"

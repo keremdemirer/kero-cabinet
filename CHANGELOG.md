@@ -1,6 +1,11 @@
 # Changelog
 
-## Unreleased
+## v0.3.0 - 2026-10-28
+- Add public GitHub update checks, startup preferences, verified downloads, and in-place installation with rollback on handled failures.
+- Add updater regression tests and a release manifest checked by CI.
+- Require a restart after updates; no repeated manual RBZ installation is needed.
+
+## English translation
 - Translate all repository documentation, plugin labels, settings, menus, validation errors, and generated part/material names into English.
 - Translate geometry test lookups and add an English text regression guard.
 - Expand test helper method syntax for compatibility with Ruby 2.6.

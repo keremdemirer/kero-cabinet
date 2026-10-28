@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "version": "0.3.0",
+  "files": {
+    "kero_cabinet.rb": "fc30c2afd772f572ea5b63cf21e0e4bc4fc9f19852a325653398cfd79db02ffb",
+    "kero_cabinet/core.rb": "2eaa33273598c090851e0f0fc2bab1443f43d7a6c2887f1a0609c072dfbac8c0",
+    "kero_cabinet/updater.rb": "fb2bcf913757fe95fe54e0081e4b778e22f8f3c499a5dceab2d9cbfda541d3bd"
+  }
+}
