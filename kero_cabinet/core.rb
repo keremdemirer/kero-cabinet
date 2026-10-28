@@ -1,5 +1,5 @@
 # frozen_string_literal: true
-# Kero Cabinet v0.11.0, SketchUp 2020+; all design inputs use millimetres.
+# Kero Cabinet v0.12.0, SketchUp 2020+; all design inputs use millimetres.
 require 'sketchup.rb'
 require 'json'
 require_relative 'updater'
@@ -9,7 +9,7 @@ module KeroCabinet
 
   %i[DICT VERSION DEFAULT DRAWER_SLIDES].each { |name| remove_const(name) if const_defined?(name, false) }
   DICT = 'kero_cabinet'.freeze
-  VERSION = '0.11.0'.freeze
+  VERSION = '0.12.0'.freeze
 
   DEFAULT = {
     'name' => 'Parametric Cabinet',
@@ -33,6 +33,13 @@ module KeroCabinet
     'front' => 18,
     'toe' => 100,
     'toe_frame' => true,
+    'worktop' => false,
+    'worktop_thickness' => 30,
+    'worktop_material' => 'MDF',
+    'worktop_front_overhang' => 0,
+    'worktop_rear_overhang' => 0,
+    'worktop_left_overhang' => 0,
+    'worktop_right_overhang' => 0,
     'timber_height' => 100,
     'timber_thickness' => 50,
     'frame' => true,
@@ -185,6 +192,8 @@ module KeroCabinet
     {
       'width' => [300, 5000], 'height' => [350, 3500], 'depth' => [250, 1200],
       'rail_width' => [40, 200], 'drawer_thickness' => [6, 30],
+      'worktop_thickness' => [6,100], 'worktop_front_overhang' => [0,300],
+      'worktop_rear_overhang' => [0,300], 'worktop_left_overhang' => [0,300], 'worktop_right_overhang' => [0,300],
       'drawer_height_limit' => [25, 3000], 'drawer_rear_gap' => [3, 50], 'drawer_bottom' => [3, 24], 'panel' => [9, 36], 'back' => [3, 24], 'front' => [9, 32],
       'toe' => [0, 250], 'timber_height' => [20, 200],
       'timber_thickness' => [10, 100], 'frame_width' => [25, 90],
@@ -220,6 +229,11 @@ module KeroCabinet
     end
     unless %w[between full].include?(c['bottom_construction'])
       raise ArgumentError, 'Bottom construction must be between or full.'
+    end
+    c['worktop'] = c['worktop'] == true
+    if c['worktop']
+      normalized = validate_worktop(cabinet_worktop_config(c))
+      c['worktop_material'] = normalized['material']
     end
     c['toe_frame'] = (c['toe_frame'] == true)
     if c['toe_frame'] && c['toe'] > 0 && c['toe'] < c['timber_height']
@@ -586,6 +600,10 @@ module KeroCabinet
       end
       end
     end
+    if c['worktop']
+      geometry = worktop_geometry(cabinet_worktop_config(c))
+      box(entities, 'Cabinet worktop', geometry[:stock], *geometry[:origin], *geometry[:size], palette)
+    end
   end
 
   # Full-width front/rear rails; transverse members butt between them.
@@ -719,6 +737,14 @@ module KeroCabinet
       stock: { name: "#{stock_number(c['thickness'])} mm #{c['material']} Worktop Sheet", base: [1.0,1.0,c['thickness']], type: 'sheet' } }
   end
 
+  def cabinet_worktop_config(c)
+    { 'name' => 'Cabinet worktop', 'material' => c['worktop_material'],
+      'thickness' => c['worktop_thickness'], 'x' => 0, 'y' => -overlay_projection(c),
+      'z' => c['height'], 'width' => c['width'], 'depth' => c['depth'],
+      'front_overhang' => c['worktop_front_overhang'], 'rear_overhang' => c['worktop_rear_overhang'],
+      'left_overhang' => c['worktop_left_overhang'], 'right_overhang' => c['worktop_right_overhang'] }
+  end
+
   def show_worktop_editor(instance = nil)
     model = Sketchup.active_model
     if instance
@@ -727,6 +753,9 @@ module KeroCabinet
       cabinets = model.selection.to_a
       unless cabinets.all? { |item| item.is_a?(Sketchup::ComponentInstance) && item.get_attribute(DICT, 'config').is_a?(String) }
         raise ArgumentError, 'Select only the adjacent Kero Cabinet components that need this worktop.'
+      end
+      if cabinets.any? { |cabinet| JSON.parse(cabinet.get_attribute(DICT, 'config'))['worktop'] == true }
+        raise ArgumentError, 'Selected cabinets already include worktops. Disable their Create worktop setting before creating a shared top.'
       end
       config = worktop_footprint(cabinets).merge('name' => 'Worktop', 'material' => 'MDF',
         'thickness' => 30, 'front_overhang' => 0, 'rear_overhang' => 0, 'left_overhang' => 0, 'right_overhang' => 0)
@@ -824,7 +853,7 @@ module KeroCabinet
       </style>
       </head>
       <body>
-      <header><h1>Kero Cabinet</h1><p>Parametric SketchUp cabinet builder - v0.11.0</p></header>
+      <header><h1>Kero Cabinet</h1><p>Parametric SketchUp cabinet builder - v0.12.0</p></header>
       <main>
         <section class="section">
           <h2>Case dimensions</h2>
@@ -851,6 +880,19 @@ module KeroCabinet
             <div><label for="timber_thickness">Timber thickness (mm)</label><input id="timber_thickness" type="number" min="10" max="100"></div>
           </div>
           <p class="hint">Default: 50 x 100 mm timber with 100 mm upright. Butt joints, full-width front/rear rails and cross rails at bay boundaries, with extra rails for spans over 600 mm. The front panel spans the full cabinet width. The frame sits behind the toe kick front; taller toe spaces receive legs. No frame is created at zero toe height.</p>
+        </section>
+        <section class="section">
+          <h2>Worktop</h2>
+          <div class="check"><input id="worktop" type="checkbox" onchange="updateWorktop()"><label for="worktop">Create worktop for this cabinet</label></div>
+          <div class="grid two" style="margin-top:12px">
+            <div><label for="worktop_thickness">Worktop thickness (mm)</label><input id="worktop_thickness" type="number" min="6" max="100"></div>
+            <div><label for="worktop_material">Worktop material</label><input id="worktop_material" type="text" maxlength="60"></div>
+            <div><label for="worktop_front_overhang">Front overhang (mm)</label><input id="worktop_front_overhang" type="number" min="0" max="300"></div>
+            <div><label for="worktop_rear_overhang">Rear overhang (mm)</label><input id="worktop_rear_overhang" type="number" min="0" max="300"></div>
+            <div><label for="worktop_left_overhang">Left overhang (mm)</label><input id="worktop_left_overhang" type="number" min="0" max="300"></div>
+            <div><label for="worktop_right_overhang">Right overhang (mm)</label><input id="worktop_right_overhang" type="number" min="0" max="300"></div>
+          </div>
+          <p class="hint">Default: 30 mm MDF, separate Worktop Sheet material. Follows this cabinet when regenerated. Thickness adds above cabinet height; overhangs add to outside dimensions. Does not replace the structural top panel or remove manually modeled tops. For neighboring cabinets, leave side overhangs at zero to avoid overlap.</p>
         </section>
         <section class="section">
           <h2>Top / Bottom / Back construction</h2>
@@ -932,10 +974,11 @@ module KeroCabinet
       <script>
         const initial = /* INITIAL_CONFIG */ null;
         let bays = JSON.parse(JSON.stringify(initial.bays));
-        const ids = ['name','width','height','depth','panel','back','front','toe','gap','style','frame_width','frame_depth','timber_height','timber_thickness','top_construction','bottom_construction','back_construction','rail_width','drawer_thickness','drawer_bottom','drawer_slide','undermount_length','drawer_rear_gap','drawer_height_mode','drawer_height_limit'];
+        const ids = ['name','width','height','depth','panel','back','front','toe','gap','style','frame_width','frame_depth','timber_height','timber_thickness','top_construction','bottom_construction','back_construction','rail_width','drawer_thickness','drawer_bottom','drawer_slide','undermount_length','drawer_rear_gap','drawer_height_mode','drawer_height_limit','worktop_thickness','worktop_material','worktop_front_overhang','worktop_rear_overhang','worktop_left_overhang','worktop_right_overhang'];
         for (const id of ids) document.getElementById(id).value = initial[id];
         document.getElementById('frame').checked = !!initial.frame;
         document.getElementById('toe_frame').checked = !!initial.toe_frame;
+        document.getElementById('worktop').checked = !!initial.worktop;
         (document.querySelector('input[name=construction][value="'+(initial.construction||'sides_full')+'"]') || document.querySelector('input[name=construction][value=sides_full]')).checked = true;
         const n = (v) => Number(v);
         const escapeHtml = (s) => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
@@ -952,6 +995,9 @@ module KeroCabinet
           document.getElementById('undermount_length').disabled=!under;
           document.getElementById('drawer_rear_gap').disabled=under;
           document.getElementById('hardware_hint').textContent=under?'TANDEM reference: 12-16 mm sides; inside width = opening minus 42 mm; 13 mm recessed bottom; 14 mm below and 6 mm above the box. Front/back members are raised to leave the underside open. Hook holes, exact rear notches, locking devices and hardware models are not generated; prepare them using the manufacturer template.':'Side-mount height and side-space references. Kero Cabinet reserves 4 mm above and below the box. Check actual length, width limits, mounting and holes against the hardware datasheet.';
+        }
+        function updateWorktop(){
+          for(const id of ['worktop_thickness','worktop_material','worktop_front_overhang','worktop_rear_overhang','worktop_left_overhang','worktop_right_overhang']) document.getElementById(id).disabled=!document.getElementById('worktop').checked;
         }
         function updateFrame(){
           for(const id of ['frame_width','frame_depth']) document.getElementById(id).disabled = !document.getElementById('frame').checked;
@@ -1009,7 +1055,7 @@ module KeroCabinet
             ${bays.length>1?`<div class="bay-width"><label>Width ratio</label><input type="number" aria-label="Bay width ratio" required min="0.2" max="10" step="0.1" value="${escapeHtml(b.weight)}" onchange="changeBay(${i},'weight',this.value);refreshLayout()"><span>Equal values give equal widths.</span></div>`:''}
             ${b.kind==='stack'?renderSections(b,i):`<div class="stack-grid">${counts(b,`changeBay(${i},'KEY',this.value)`)}</div><p class="hint">Need drawers below doors? Choose Mixed layout above.</p>`}</div>`).join('');
         }
-        const limits={drawer_height_limit:[25,3000],drawer_rear_gap:[3,50],width:[300,5000],height:[350,3500],depth:[250,1200],panel:[9,36],back:[3,24],front:[9,32],toe:[0,250],timber_height:[20,200],timber_thickness:[10,100],frame_width:[25,90],frame_depth:[12,36],gap:[1,6],rail_width:[40,200],drawer_thickness:[6,30],drawer_bottom:[3,24]};
+        const limits={worktop_thickness:[6,100],worktop_front_overhang:[0,300],worktop_rear_overhang:[0,300],worktop_left_overhang:[0,300],worktop_right_overhang:[0,300],drawer_height_limit:[25,3000],drawer_rear_gap:[3,50],width:[300,5000],height:[350,3500],depth:[250,1200],panel:[9,36],back:[3,24],front:[9,32],toe:[0,250],timber_height:[20,200],timber_thickness:[10,100],frame_width:[25,90],frame_depth:[12,36],gap:[1,6],rail_width:[40,200],drawer_thickness:[6,30],drawer_bottom:[3,24]};
         for(const [id,[min,max]] of Object.entries(limits)){const input=document.getElementById(id);input.min=min;input.max=max;input.required=true;input.title=`Allowed range: ${min}-${max} mm`;}
         document.addEventListener('wheel',event=>{if(document.activeElement?.type==='number')document.activeElement.blur();},{passive:true});
         function showError(message){ document.getElementById('error').textContent=message; }
@@ -1022,7 +1068,8 @@ module KeroCabinet
               showError(`${label||'Number'}: enter a value from ${input.min} to ${input.max}. Current value: ${input.value||'empty'}.`);input.focus();return;
             }
           }
-          const c={}; for(const id of ids) c[id]=['name','style','top_construction','bottom_construction','back_construction','drawer_slide','drawer_height_mode'].includes(id)?document.getElementById(id).value:n(document.getElementById(id).value);
+          const c={}; for(const id of ids) c[id]=['name','style','top_construction','bottom_construction','back_construction','drawer_slide','drawer_height_mode','worktop_material'].includes(id)?document.getElementById(id).value:n(document.getElementById(id).value);
+          c.worktop=document.getElementById('worktop').checked;
           c.toe_frame=document.getElementById('toe_frame').checked;
           c.frame=document.getElementById('frame').checked;
           c.construction=document.querySelector('input[name=construction]:checked').value;
@@ -1030,7 +1077,7 @@ module KeroCabinet
           if(!window.sketchup || !window.sketchup.submit) return showError('This panel must be used inside SketchUp.');
           window.sketchup.submit(JSON.stringify(c));
         }
-        updateFrame();updateConstruction();updateDrawerHardware();renderBays();
+        updateFrame();updateConstruction();updateDrawerHardware();updateWorktop();renderBays();
       </script>
       </body>
       </html>

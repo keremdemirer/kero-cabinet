@@ -50,6 +50,39 @@ class WorktopTest < Minitest::Test
     assert_in_delta 850, min[2], 0.001
   end
 
+  def test_per_cabinet_top_follows_dimensions_and_keeps_separate_stock
+    model = MockModel.new
+    Sketchup.active_model = model
+    %w[inset overlay].product([true,false]).each do |style, frame|
+      c = KeroCabinet.validate_config(KeroCabinet.clone_defaults.merge('worktop' => true, 'style' => style, 'frame' => frame,
+        'worktop_front_overhang' => 20, 'worktop_left_overhang' => 5, 'worktop_right_overhang' => 10))
+      entities = MockEntities.new
+      KeroCabinet.generate_parts(entities, c, model)
+      top = entities.instances.find { |part| part.name == 'Cabinet worktop' }
+      assert top
+      low,high = top.bounds_mm
+      assert_in_delta -5, low[0], 0.001
+      assert_in_delta c['width']+10, high[0], 0.001
+      assert_in_delta -KeroCabinet.overlay_projection(c)-20, low[1], 0.001
+      assert_in_delta c['depth']+20, high[1]-low[1], 0.001
+      assert_in_delta c['height'], low[2], 0.001
+      assert_in_delta c['height']+30, high[2], 0.001
+      assert_equal '30 mm MDF Worktop Sheet', top.material.name
+      c['width'] = 1800
+      c['height'] = 950
+      next_entities = MockEntities.new
+      KeroCabinet.generate_parts(next_entities, c, model)
+      changed = next_entities.instances.find { |part| part.name == 'Cabinet worktop' }
+      assert_same top.definition, changed.definition
+      assert_in_delta 1815, changed.bounds_mm[1][0]-changed.bounds_mm[0][0], 0.001
+      assert_in_delta 950, changed.bounds_mm[0][2], 0.001
+      c['worktop'] = false
+      disabled = MockEntities.new
+      KeroCabinet.generate_parts(disabled, c, model)
+      refute disabled.instances.any? { |part| part.name == 'Cabinet worktop' }
+    end
+  end
+
   def test_invalid_input_and_cutlist_hardware_keyword_are_rejected
     assert_raises(ArgumentError) { KeroCabinet.validate_worktop(settings.merge('thickness' => 0)) }
     assert_raises(ArgumentError) { KeroCabinet.validate_worktop(settings.merge('front_overhang' => -1)) }

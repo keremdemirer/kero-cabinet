@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.12.0 - 2026-10-28
+- Add optional per-cabinet worktops with 30 mm MDF defaults and separate material/thickness/overhang controls.
+- Regenerate integrated tops with their cabinet dimensions and preserve shared Worktop Sheet stock definitions.
+- Default to disabled on existing cabinets and prevent shared-worktop creation over already integrated tops.
+- Verify integrated size changes, overlay depth, material reuse and removal when disabled.
+
 ## v0.11.0 - 2026-10-28
 - Create independent worktops from adjacent same-height cabinet selections, with 30 mm default thickness, separate material naming and four overhang settings.
 - Edit worktop settings without changing the cabinets and reuse separate Worktop Sheet stock definitions.
