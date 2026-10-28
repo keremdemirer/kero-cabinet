@@ -1,5 +1,5 @@
 # frozen_string_literal: true
-# Kero Cabinet v0.13.0, SketchUp 2020+; all design inputs use millimetres.
+# Kero Cabinet v0.14.0, SketchUp 2020+; all design inputs use millimetres.
 require 'sketchup.rb'
 require 'json'
 require_relative 'updater'
@@ -9,7 +9,7 @@ module KeroCabinet
 
   %i[DICT VERSION DEFAULT DRAWER_SLIDES].each { |name| remove_const(name) if const_defined?(name, false) }
   DICT = 'kero_cabinet'.freeze
-  VERSION = '0.13.0'.freeze
+  VERSION = '0.14.0'.freeze
 
   DEFAULT = {
     'name' => 'Parametric Cabinet',
@@ -73,7 +73,7 @@ module KeroCabinet
   def show_dialog(instance = nil)
     config = clone_defaults
     if instance && instance.valid?
-      raw = instance.get_attribute(DICT, 'config')
+      raw = cabinet_config_raw(instance)
       if raw.is_a?(String)
         stored = JSON.parse(raw)
         config = clone_defaults.merge(stored)
@@ -83,6 +83,7 @@ module KeroCabinet
       end
     end
 
+    config['_linked_count'] = instance && linked_cabinet?(instance) ? instance.definition.instances.length : 0
     dialog = UI::HtmlDialog.new(
       dialog_title: instance ? 'Kero Cabinet | Edit' : 'Kero Cabinet | New',
       preferences_key: 'KeroCabinet.ParametricCabinet',
@@ -666,7 +667,7 @@ module KeroCabinet
       obsolete = []
       if instance && instance.valid?
         raise 'The selected object is no longer available.' unless instance.is_a?(Sketchup::ComponentInstance)
-        instance.make_unique
+        instance.make_unique unless linked_cabinet?(instance)
         definition = instance.definition
         obsolete = obsolete_part_definitions(definition.entities)
         definition.entities.clear!
@@ -677,9 +678,13 @@ module KeroCabinet
       generate_parts(definition.entities, c, model)
       definition.name = c['name']
       definition.description = "Kero Cabinet #{VERSION}, created from parameters in millimetres"
-      instance.name = c['name']
-      instance.set_attribute(DICT, 'config', JSON.generate(c))
-      instance.set_attribute(DICT, 'version', VERSION)
+      definition.set_attribute(DICT, 'config', JSON.generate(c))
+      targets = linked_cabinet?(instance) ? definition.instances : [instance]
+      targets.each do |target|
+        target.name = c['name']
+        target.set_attribute(DICT, 'config', JSON.generate(c))
+        target.set_attribute(DICT, 'version', VERSION)
+      end
       model.selection.clear
       model.selection.add(instance)
       remove_unused_part_definitions(model, obsolete)
@@ -804,6 +809,74 @@ module KeroCabinet
     show_worktop_editor(selected.first)
   end
 
+  def linked_cabinet?(instance)
+    instance.definition.get_attribute(DICT, 'linked_cabinet') == true
+  end
+
+  def cabinet_config_raw(instance)
+    shared = linked_cabinet?(instance) ? instance.definition.get_attribute(DICT, 'config') : nil
+    shared.is_a?(String) ? shared : instance.get_attribute(DICT, 'config')
+  end
+
+  def create_linked_copy(source = nil)
+    source ||= selected_cabinet
+    raise ArgumentError, 'Select one Kero Cabinet component to create a linked copy.' unless source && source.valid?
+    model = Sketchup.active_model
+    model.start_operation('Create linked Kero Cabinet copy', true)
+    begin
+      raw = cabinet_config_raw(source)
+      # Isolate from ordinary pre-existing copies before starting a linked family.
+      source.make_unique unless linked_cabinet?(source)
+      definition = source.definition
+      definition.set_attribute(DICT, 'linked_cabinet', true)
+      definition.set_attribute(DICT, 'config', raw)
+      offset = Geom::Transformation.new([definition.bounds.width + mm(100), 0, 0])
+      copy = model.active_entities.add_instance(definition, source.transformation * offset)
+      copy.name = source.name
+      copy.set_attribute(DICT, 'config', raw)
+      copy.set_attribute(DICT, 'version', VERSION)
+      model.selection.clear
+      model.selection.add(copy)
+      model.commit_operation
+      copy
+    rescue StandardError
+      model.abort_operation
+      raise
+    end
+  end
+
+  def make_cabinet_independent(instance = nil)
+    instance ||= selected_cabinet
+    raise ArgumentError, 'Select one linked Kero Cabinet component first.' unless instance && instance.valid?
+    return instance unless linked_cabinet?(instance)
+    raw = cabinet_config_raw(instance)
+    model = Sketchup.active_model
+    model.start_operation('Make Kero Cabinet independent', true)
+    begin
+      instance.make_unique
+      instance.definition.set_attribute(DICT, 'linked_cabinet', false)
+      instance.definition.set_attribute(DICT, 'config', raw)
+      instance.set_attribute(DICT, 'config', raw)
+      model.commit_operation
+      instance
+    rescue StandardError
+      model.abort_operation
+      raise
+    end
+  end
+
+  def linked_copy_command
+    create_linked_copy
+  rescue StandardError => error
+    UI.messagebox(error.message)
+  end
+
+  def independent_copy_command
+    make_cabinet_independent
+  rescue StandardError => error
+    UI.messagebox(error.message)
+  end
+
   def selected_cabinet
     selection = Sketchup.active_model.selection
     return nil unless selection.length == 1
@@ -857,10 +930,12 @@ module KeroCabinet
         .layout-tools{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:12px 0}.layout-tools span{font-size:11px;color:#73776e}.preset{border:1px solid #d7dcd2;border-radius:6px;background:#f7f9f4;padding:7px 8px;cursor:pointer;font-size:11px;color:#40583e}.section-layout{display:grid;grid-template-columns:76px minmax(0,1fr);gap:12px;align-items:start}.cabinet-preview{display:flex;flex-direction:column;border:3px solid #c4b598;border-radius:3px;background:#e9e2d5;min-height:210px;overflow:hidden}.preview-cell{border:0;border-bottom:2px solid #c4b598;background:#eee8dc;color:#5d5343;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:9px 2px;font-size:10px;min-height:35px;gap:4px}.preview-cell:last-child{border-bottom:0}.preview-cell.drawer{background:#ded2ba}.preview-cell.open{background:#f8f5ed}.preview-cell strong{font-size:11px}.stack-item{border:1px solid #e1e4da;border-left:3px solid #91a684;border-radius:8px;padding:12px;margin-bottom:10px;scroll-margin-top:15px;background:#fafbf8}.stack-head{display:flex;justify-content:space-between;align-items:center;gap:5px}.stack-title{font-size:12px;font-weight:700}.position-tag{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:#7d8575;display:block;margin-bottom:3px}.stack-actions{display:flex;gap:3px}.stack-actions button{border:1px solid #dce0d5;background:#fff;border-radius:5px;padding:5px 7px;cursor:pointer;font-size:12px}.stack-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.share-line{display:flex;align-items:center;justify-content:space-between;gap:5px;margin-bottom:4px}.share-line label{margin:0}.share-badge{font-size:11px;font-weight:700;color:#3c7354}.add-section{width:100%;padding:10px;border:1px dashed #a7b89d;border-radius:6px;background:#f6f9f2;color:#405b35;cursor:pointer}.bay-width{display:flex;align-items:center;gap:10px;padding:8px 0}.bay-width label{margin:0;white-space:nowrap}.bay-width input{max-width:95px}.bay-width span{font-size:11px;color:#73776e}.section-intro{font-size:11px;line-height:1.5;color:#6c7364;margin:8px 0 12px}@media(max-width:520px){.section-layout{grid-template-columns:1fr}.cabinet-preview{display:none}.type-picker button{font-size:11px}.stack-actions button{padding:5px}}
 
         [hidden]{display:none!important}body{background:#f1f2ee;color:#253027}.editor-header{display:flex;justify-content:space-between;align-items:center;gap:12px;background:#253b30;padding:18px 22px}.editor-header h1{font-size:19px;letter-spacing:-.3px}.editor-header p{font-size:12px;color:#c7d4c7}.version-tag{font-size:11px;white-space:nowrap;color:#d7e4d5;border:1px solid #617463;border-radius:20px;padding:5px 9px}.editor-tabs{display:grid;grid-template-columns:1.25fr 1fr 1fr 1.2fr;gap:5px;padding:10px 18px;background:#f8f9f5;border-bottom:1px solid #dce2d5;position:sticky;top:0;z-index:5}.editor-tabs button{border:0;background:transparent;border-radius:7px;color:#697465;padding:10px 5px;font-size:12px;font-weight:600;cursor:pointer}.editor-tabs button[aria-selected=true]{background:#fff;color:#264d35;box-shadow:0 1px 5px #1a30251a}.editor-tabs button:focus-visible{outline:2px solid #68865c;outline-offset:1px}main{padding:16px 18px 130px}.section{border-color:#dfe5d8;border-radius:12px;padding:18px;margin-bottom:14px}.section h2{font-size:14px;letter-spacing:-.1px;margin-bottom:16px}.grid{gap:13px}.name-field{grid-column:1/-1}label{font-size:11px;color:#626d5c}input,select{border-color:#d4ddcc;border-radius:7px;height:38px;background:#fff}input:focus,select:focus{outline:2px solid #b5c9a8;outline-offset:1px}.advanced{border-top:1px solid #e5e9df;margin-top:16px;padding-top:12px}.advanced>summary{cursor:pointer;color:#49613d;font-size:12px;font-weight:600;margin-bottom:12px}.help-details{margin-top:12px}.help-details>summary{font-size:11px;color:#788471;cursor:pointer}.help-details .hint{background:#f6f8f2;padding:10px;border-radius:7px}.construction-card svg{height:72px;max-width:110px}.construction-card{padding:10px}.construction-card small{font-size:10px}.actions{padding:10px 18px 13px;display:block;z-index:10;box-shadow:0 -3px 16px #253b3009;border-color:#dce4d3}.editor-summary{font-size:11px;line-height:1.5;color:#67765e;padding:0 0 8px;border-bottom:1px solid #edf0e8;margin-bottom:9px}.action-row{display:flex;align-items:center;justify-content:space-between;gap:12px}.error{font-size:11px;max-height:64px;overflow:auto}.primary{white-space:nowrap;padding:12px 22px;background:#355e40}.check{background:#f4f7ef;padding:10px;border-radius:7px}.stack-item{background:#fafbf7}.bay{border-color:#dde5d5}.preset{background:#f5f8ef}.type-picker{background:#edf2e6}@media(max-width:540px){.editor-header{padding:14px}.editor-header p{max-width:230px;font-size:11px}.editor-tabs{padding:8px 10px;gap:2px}.editor-tabs button{font-size:11px}main{padding:12px 10px 140px}.section{padding:14px}.actions{padding:9px 12px}.primary{padding:11px 16px}.version-tag{font-size:10px}}
+        .linked-notice{margin:0;padding:10px 20px;background:#fff3d8;color:#75551d;font-size:12px;line-height:1.45}
       </style>
       </head>
       <body>
-      <header class="editor-header"><div><h1>Kero Cabinet</h1><p>Design your cabinet. Fine-tune only what you need.</p></div><span class="version-tag">v0.13.0 &middot; mm</span></header>
+      <header class="editor-header"><div><h1>Kero Cabinet</h1><p>Design your cabinet. Fine-tune only what you need.</p></div><span class="version-tag">v0.14.0 &middot; mm</span></header>
+      <p id="linked-notice" class="linked-notice" hidden></p>
       <nav class="editor-tabs" role="tablist" aria-label="Cabinet settings">
         <button id="tab-size" type="button" role="tab" data-tab="size" aria-controls="panel-size" aria-selected="true" onclick="showTab('size')">Size &amp; fronts</button>
         <button id="tab-layout" type="button" role="tab" data-tab="layout" aria-controls="panel-layout" aria-selected="false" tabindex="-1" onclick="showTab('layout')">Layout</button>
@@ -977,6 +1052,9 @@ module KeroCabinet
       <div class="actions"><div class="editor-summary" id="editor-summary" aria-live="polite"></div><div class="action-row"><span class="error" id="error" role="alert"></span><button class="primary" type="button" onclick="submitConfig()">Apply to model</button></div></div>
       <script>
         const initial = /* INITIAL_CONFIG */ null;
+        const linkedCount=initial._linked_count||0;
+        document.getElementById('linked-notice').hidden=linkedCount<1;
+        document.getElementById('linked-notice').textContent=`Linked cabinet: Apply to model updates all ${linkedCount} linked copies. Positions stay separate. Reopen other editors after applying to avoid stale settings.`;
         let bays = JSON.parse(JSON.stringify(initial.bays));
         const ids = ['name','width','height','depth','panel','back','front','toe','gap','style','frame_width','frame_depth','timber_height','timber_thickness','top_construction','bottom_construction','back_construction','rail_width','drawer_thickness','drawer_bottom','drawer_slide','undermount_length','drawer_rear_gap','drawer_height_mode','drawer_height_limit','worktop_thickness','worktop_material','worktop_front_overhang','worktop_rear_overhang','worktop_left_overhang','worktop_right_overhang'];
         for (const id of ids) document.getElementById(id).value = initial[id];
@@ -1159,6 +1237,23 @@ module KeroCabinet
     worktop_menu.add_item(@menu ? 'Create worktop from selection...' : 'Kero Cabinet | Create worktop from selection...') { show_worktop_editor }
     worktop_menu.add_item(@menu ? 'Edit selected worktop...' : 'Kero Cabinet | Edit selected worktop...') { edit_selected_worktop }
     @worktop_commands_registered = true
+  end
+
+  if defined?(UI) && UI.respond_to?(:menu) && !@linked_commands_registered
+    linked_menu = @menu || UI.menu('Plugins')
+    linked_menu.add_item(@menu ? 'Create linked copy' : 'Kero Cabinet | Create linked copy') { linked_copy_command }
+    linked_menu.add_item(@menu ? 'Make independent' : 'Kero Cabinet | Make independent') { independent_copy_command }
+    if UI.respond_to?(:add_context_menu_handler)
+      UI.add_context_menu_handler do |context_menu|
+        selected = selected_cabinet
+        if selected
+          context_menu.add_separator
+          context_menu.add_item('Kero Cabinet | Create linked copy') { linked_copy_command }
+          context_menu.add_item('Kero Cabinet | Make independent') { independent_copy_command } if linked_cabinet?(selected)
+        end
+      end
+    end
+    @linked_commands_registered = true
   end
 
 end

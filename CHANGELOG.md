@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.14.0 - 2026-10-29
+- Add Create linked copy and Make independent commands with context-menu support.
+- Regenerate linked cabinet families from either instance while preserving placement transforms.
+- Store shared configuration on the family definition and refresh instance metadata after edits.
+- Show a linked-family disclosure in the editor and verify isolation from ordinary copies and detachment.
+
 ## v0.13.0 - 2026-10-29
 - Reorganize the editor into Size & fronts, Layout, Build, and Base & top tabs.
 - Add a persistent dimensions/layout summary, progressive details, conditional worktop/timber fields, and a simpler Apply to model action.

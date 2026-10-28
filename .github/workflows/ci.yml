@@ -33,6 +33,8 @@ jobs:
         run: ruby test/undermount_test.rb
       - name: Drawer box height tests
         run: ruby test/drawer_height_test.rb
+      - name: Linked cabinet copies
+        run: ruby test/linked_copy_test.rb
       - name: Editor behavior
         run: node test/editor_test.js
       - name: Worktop geometry
