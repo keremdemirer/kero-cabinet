@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.6.3 - 2026-10-28
+- Simplify the cabinet layout editor with direct content buttons, compact section controls, and a schematic preview.
+- Show normalized height and width percentages alongside relative ratios.
+- Add Drawer + doors, Equal split, and 3 sections presets; hide width ratios for a single bay.
+- Disable unavailable removal/movement controls and keep sections visually ordered top to bottom.
+
 ## v0.6.2 - 2026-10-28
 - Display stacked sections top to bottom to match their physical cabinet positions.
 - Move Add section above above the section list, preserving saved geometry order and movement controls.

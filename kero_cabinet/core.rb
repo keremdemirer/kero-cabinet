@@ -1,5 +1,5 @@
 # frozen_string_literal: true
-# Kero Cabinet v0.6.2, SketchUp 2020+; all design inputs use millimetres.
+# Kero Cabinet v0.6.3, SketchUp 2020+; all design inputs use millimetres.
 require 'sketchup.rb'
 require 'json'
 require_relative 'updater'
@@ -8,7 +8,7 @@ module KeroCabinet
   extend self
 
   DICT = 'kero_cabinet'.freeze
-  VERSION = '0.6.2'.freeze
+  VERSION = '0.6.3'.freeze
 
   DEFAULT = {
     'name' => 'Parametric Cabinet',
@@ -577,10 +577,14 @@ module KeroCabinet
         .primary{background:#3c7354;color:#fff;border:0;border-radius:7px;padding:12px 18px;font-weight:700;cursor:pointer}
         .error{color:#ae3429;flex:1;font-size:12px;overflow-wrap:anywhere}.spacer{flex:1}
         @media(max-width:560px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+        button:disabled{opacity:.4;cursor:default}.bay{background:#fff;padding:14px;border-color:#dedfd9}.bayhead{font-size:14px}.bay-subtitle{font-size:11px;color:#73776e;font-weight:400;margin-top:3px}
+        .type-picker{display:flex;gap:4px;background:#f1f2ed;padding:4px;border-radius:8px;flex-wrap:wrap;margin:10px 0 12px}.type-picker button{flex:1;border:0;border-radius:5px;padding:8px 6px;background:transparent;color:#60665a;font-size:12px;cursor:pointer;white-space:nowrap}.type-picker button.active{background:#fff;color:#285e40;box-shadow:0 1px 4px #0002;font-weight:700}.type-picker button:focus-visible,.preset:focus-visible{outline:2px solid #3c7354;outline-offset:2px}
+        .layout-tools{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:12px 0}.layout-tools span{font-size:11px;color:#73776e}.preset{border:1px solid #d7dcd2;border-radius:6px;background:#f7f9f4;padding:7px 8px;cursor:pointer;font-size:11px;color:#40583e}.section-layout{display:grid;grid-template-columns:76px minmax(0,1fr);gap:12px;align-items:start}.cabinet-preview{display:flex;flex-direction:column;border:3px solid #c4b598;border-radius:3px;background:#e9e2d5;min-height:210px;overflow:hidden}.preview-cell{border:0;border-bottom:2px solid #c4b598;background:#eee8dc;color:#5d5343;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:9px 2px;font-size:10px;min-height:35px;gap:4px}.preview-cell:last-child{border-bottom:0}.preview-cell.drawer{background:#ded2ba}.preview-cell.open{background:#f8f5ed}.preview-cell strong{font-size:11px}.stack-item{border:1px solid #e1e4da;border-left:3px solid #91a684;border-radius:8px;padding:12px;margin-bottom:10px;scroll-margin-top:15px;background:#fafbf8}.stack-head{display:flex;justify-content:space-between;align-items:center;gap:5px}.stack-title{font-size:12px;font-weight:700}.position-tag{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:#7d8575;display:block;margin-bottom:3px}.stack-actions{display:flex;gap:3px}.stack-actions button{border:1px solid #dce0d5;background:#fff;border-radius:5px;padding:5px 7px;cursor:pointer;font-size:12px}.stack-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.share-line{display:flex;align-items:center;justify-content:space-between;gap:5px;margin-bottom:4px}.share-line label{margin:0}.share-badge{font-size:11px;font-weight:700;color:#3c7354}.add-section{width:100%;padding:10px;border:1px dashed #a7b89d;border-radius:6px;background:#f6f9f2;color:#405b35;cursor:pointer}.bay-width{display:flex;align-items:center;gap:10px;padding:8px 0}.bay-width label{margin:0;white-space:nowrap}.bay-width input{max-width:95px}.bay-width span{font-size:11px;color:#73776e}.section-intro{font-size:11px;line-height:1.5;color:#6c7364;margin:8px 0 12px}@media(max-width:520px){.section-layout{grid-template-columns:1fr}.cabinet-preview{display:none}.type-picker button{font-size:11px}.stack-actions button{padding:5px}}
       </style>
       </head>
       <body>
-      <header><h1>Kero Cabinet</h1><p>Parametric SketchUp cabinet builder - v0.6.2</p></header>
+      <header><h1>Kero Cabinet</h1><p>Parametric SketchUp cabinet builder - v0.6.3</p></header>
       <main>
         <section class="section">
           <h2>Case dimensions</h2>
@@ -668,8 +672,8 @@ module KeroCabinet
           <p class="hint">Box sides and front/back members share the box thickness. The bottom fits between them. Visible drawer fronts use Door/front thickness. Outer box size and runner clearances stay unchanged.</p>
         </section>
         <section class="section">
-          <h2>Vertical bays</h2>
-          <p class="hint" style="margin:0 0 10px">Each bay can contain doors, drawers, or open shelves. Weights determine the relative bay widths.</p>
+          <h2>Cabinet layout</h2>
+          <p class="hint" style="margin:0 0 10px">Add bays from left to right. Choose their contents, then split a bay into stacked sections when you need drawers below doors.</p>
           <div id="bays"></div>
           <button class="ghost" onclick="addBay()" type="button">+ Add bay</button>
         </section>
@@ -712,25 +716,41 @@ module KeroCabinet
         function addSection(i){if(bays[i].sections.length>=6)return showError('A bay supports up to 6 stacked sections.');bays[i].sections.push(newSection());renderBays();}
         function removeSection(i,j){if(bays[i].sections.length>2){bays[i].sections.splice(j,1);renderBays();}}
         function moveSection(i,j,direction){const items=bays[i].sections;const target=j+direction;if(target>=0&&target<items.length){[items[j],items[target]]=[items[target],items[j]];renderBays();}}
+        const kindNames={door:'Doors',drawer:'Drawers',open:'Open shelves',stack:'Mixed layout'};
+        function typePicker(kind,action,stack=false){
+          return `<div class="type-picker" role="group" aria-label="Contents">${(stack?['door','drawer','open','stack']:['door','drawer','open']).map(value=>`<button type="button" class="${kind===value?'active':''}" aria-pressed="${kind===value}" onclick="${action.replace('VALUE',value)}">${kindNames[value]}</button>`).join('')}</div>`;
+        }
+        function layoutPreset(i,name){
+          bays[i].kind='stack';
+          bays[i].sections=name==='three'?[newSection('drawer',1),newSection('open',1),newSection('door',2)]:[newSection('drawer',1),newSection('door',name==='equal'?1:3)];
+          renderBays();
+        }
+        function refreshLayout(){renderBays();}
+        function counts(item,action){
+          return `${item.kind==='drawer'?`<div><label>Drawers</label><input type="number" required min="1" max="8" value="${item.drawers}" aria-label="Drawer count" onchange="${action.replace('KEY','drawers')}"></div>`:item.kind==='door'?`<div><label>Doors side by side</label><select aria-label="Door count" onchange="${action.replace('KEY','doors')}"><option value="1" ${item.doors==1?'selected':''}>1 door</option><option value="2" ${item.doors==2?'selected':''}>2 doors</option></select></div>`:''}
+          ${item.kind!=='drawer'?`<div><label>Shelves inside</label><input type="number" required min="0" max="8" value="${item.shelves}" aria-label="Shelf count" onchange="${action.replace('KEY','shelves')}"></div>`:''}`;
+        }
         function renderSections(b,i){
           if(b.kind!=='stack')return '';
-          return '<p class="hint">Sections are displayed top to bottom, matching the cabinet. Height weights divide the available height; horizontal divider panels are added automatically.</p>'+`<button type="button" class="ghost" onclick="addSection(${i})">+ Add section above</button>`+
-          b.sections.map((section,j)=>`<div class="bay"><div class="bayhead">Section ${j+1}${j===0?' (bottom)':j===b.sections.length-1?' (top)':''}<span><button type="button" class="ghost remove" onclick="moveSection(${i},${j},-1)" ${j===0?'disabled':''}>Down</button> <button type="button" class="ghost remove" onclick="moveSection(${i},${j},1)" ${j===b.sections.length-1?'disabled':''}>Up</button> <button type="button" class="ghost remove" onclick="removeSection(${i},${j})" ${b.sections.length<=2?'disabled':''}>Remove</button></span></div>
-          <div class="grid"><div><label>Section type</label><select onchange="changeSection(${i},${j},'kind',this.value)">${['drawer','door','open'].map(kind=>`<option value="${kind}" ${section.kind===kind?'selected':''}>${{drawer:'Drawers',door:'Doors',open:'Open shelves'}[kind]}</option>`).join('')}</select></div>
-          <div><label>Height weight</label><input type="number" required min="0.2" max="10" step="0.1" value="${escapeHtml(section.weight)}" onchange="changeSection(${i},${j},'weight',this.value)"></div>
-          ${section.kind==='drawer'?`<div><label>Drawer count</label><input type="number" required min="1" max="8" value="${section.drawers}" onchange="changeSection(${i},${j},'drawers',this.value)"></div>`:section.kind==='door'?`<div><label>Door count</label><input type="number" required min="1" max="2" value="${section.doors}" onchange="changeSection(${i},${j},'doors',this.value)"></div>`:''}
-          ${section.kind!=='drawer'?`<div><label>Shelf count</label><input type="number" required min="0" max="8" value="${section.shelves}" onchange="changeSection(${i},${j},'shelves',this.value)"></div>`:''}</div></div>`).reverse().join('');
+          const total=b.sections.reduce((sum,section)=>sum+(Number(section.weight)||0),0)||1;
+          const ordered=b.sections.map((section,j)=>({section,j})).reverse();
+          const percent=section=>Math.round((Number(section.weight)||0)*100/total);
+          const preview=`<div class="cabinet-preview" role="img" aria-label="Bay ${i+1}, top to bottom: ${ordered.map(({section})=>kindNames[section.kind]).join(', ')}">${ordered.map(({section})=>`<div class="preview-cell ${section.kind}" style="flex:${Number(section.weight)||1}"><strong>${kindNames[section.kind]}</strong><span>${percent(section)}%</span></div>`).join('')}</div>`;
+          const cards=ordered.map(({section,j},displayIndex)=>`<div class="stack-item" id="section-${i}-${j}"><div class="stack-head"><div><span class="position-tag">${j===b.sections.length-1?'Top':j===0?'Bottom':'Middle'}</span><span class="stack-title">${kindNames[section.kind]}</span></div><div class="stack-actions">
+            <button type="button" aria-label="Move section up" title="Move up" onclick="moveSection(${i},${j},1)" ${j===b.sections.length-1?'disabled':''}>&uarr;</button>
+            <button type="button" aria-label="Move section down" title="Move down" onclick="moveSection(${i},${j},-1)" ${j===0?'disabled':''}>&darr;</button>
+            <button type="button" aria-label="Remove section" title="Remove section" onclick="removeSection(${i},${j})" ${b.sections.length<=2?'disabled':''}>&times;</button></div></div>
+            ${typePicker(section.kind,`changeSection(${i},${j},'kind','VALUE')`)}
+            <div class="stack-grid"><div><div class="share-line"><label>Height ratio</label><span class="share-badge">${percent(section)}% of height</span></div><input type="number" aria-label="Section height ratio" required min="0.2" max="10" step="0.1" value="${escapeHtml(section.weight)}" onchange="changeSection(${i},${j},'weight',this.value);refreshLayout()"></div>
+            ${counts(section,`changeSection(${i},${j},'KEY',this.value)`)}</div></div>`).join('');
+          return `<div class="layout-tools"><span>Quick layout</span><button type="button" class="preset" onclick="layoutPreset(${i},'drawer')">Drawer + doors</button><button type="button" class="preset" onclick="layoutPreset(${i},'equal')">Equal split</button><button type="button" class="preset" onclick="layoutPreset(${i},'three')">3 sections</button></div><p class="section-intro">Shown top to bottom, like your cabinet. Height ratios share the available space; divider panels are automatic.</p><div class="section-layout">${preview}<div><button type="button" class="add-section" onclick="addSection(${i})" ${b.sections.length>=6?'disabled':''}>+ Add section above</button><div style="height:10px"></div>${cards}</div></div>`;
         }
         function renderBays(){
-          document.getElementById('bays').innerHTML = bays.map((b,i)=>{
-            const third = b.kind==='drawer' ? `<div><label>Drawer count</label><input type="number" min="1" max="8" value="${b.drawers}" onchange="changeBay(${i},'drawers',this.value)"></div>`
-             : b.kind==='door' ? `<div><label>Door count (side by side)</label><select onchange="changeBay(${i},'doors',this.value)"><option value="1" ${b.doors==1?'selected':''}>1</option><option value="2" ${b.doors==2?'selected':''}>2</option></select></div>` : '';
-            const shelves = b.kind!=='drawer'&&b.kind!=='stack' ? `<div><label>${b.kind==='door'?'Internal shelf':'Shelf'} count</label><input type="number" min="0" max="8" value="${b.shelves}" onchange="changeBay(${i},'shelves',this.value)"></div>` : '';
-            return `<div class="bay"><div class="bayhead"><span>Bay ${i+1}</span><button class="ghost remove" onclick="removeBay(${i})" type="button">Remove</button></div>
-              <div class="grid"><div><label>Type</label><select onchange="changeBay(${i},'kind',this.value)">
-                <option value="door" ${b.kind==='door'?'selected':''}>Doors</option><option value="drawer" ${b.kind==='drawer'?'selected':''}>Drawers</option><option value="open" ${b.kind==='open'?'selected':''}>Open shelves</option><option value="stack" ${b.kind==='stack'?'selected':''}>Stacked sections</option></select></div>
-                <div><label>Width weight</label><input type="number" min="0.2" max="10" step="0.1" value="${escapeHtml(b.weight)}" onchange="changeBay(${i},'weight',this.value)"></div>${third}${shelves}</div>${renderSections(b,i)}</div>`;
-          }).join('');
+          const total=bays.reduce((sum,bay)=>sum+(Number(bay.weight)||0),0)||1;
+          document.getElementById('bays').innerHTML=bays.map((b,i)=>`<div class="bay"><div class="bayhead"><div>Bay ${i+1}<div class="bay-subtitle">${bays.length===1?'Full cabinet width':i===0?'Left':i===bays.length-1?'Right':'Middle'} &middot; ${Math.round((Number(b.weight)||0)*100/total)}% of width</div></div><button class="ghost remove" onclick="removeBay(${i})" type="button" ${bays.length<=1?'disabled':''}>Remove bay</button></div>
+            ${typePicker(b.kind,`changeBay(${i},'kind','VALUE')`,true)}
+            ${bays.length>1?`<div class="bay-width"><label>Width ratio</label><input type="number" aria-label="Bay width ratio" required min="0.2" max="10" step="0.1" value="${escapeHtml(b.weight)}" onchange="changeBay(${i},'weight',this.value);refreshLayout()"><span>Equal values give equal widths.</span></div>`:''}
+            ${b.kind==='stack'?renderSections(b,i):`<div class="stack-grid">${counts(b,`changeBay(${i},'KEY',this.value)`)}</div><p class="hint">Need drawers below doors? Choose Mixed layout above.</p>`}</div>`).join('');
         }
         const limits={width:[300,5000],height:[350,3500],depth:[250,1200],panel:[9,36],back:[3,24],front:[9,32],toe:[0,250],timber_height:[20,200],timber_thickness:[10,100],frame_width:[25,90],frame_depth:[12,36],gap:[1,6],rail_width:[40,200],drawer_thickness:[6,30],drawer_bottom:[3,24]};
         for(const [id,[min,max]] of Object.entries(limits)){const input=document.getElementById(id);input.min=min;input.max=max;input.required=true;input.title=`Allowed range: ${min}-${max} mm`;}
