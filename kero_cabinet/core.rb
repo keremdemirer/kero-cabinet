@@ -1,5 +1,5 @@
 # frozen_string_literal: true
-# Kero Cabinet v0.5.1, SketchUp 2020+; all design inputs use millimetres.
+# Kero Cabinet v0.6.0, SketchUp 2020+; all design inputs use millimetres.
 require 'sketchup.rb'
 require 'json'
 require_relative 'updater'
@@ -8,7 +8,7 @@ module KeroCabinet
   extend self
 
   DICT = 'kero_cabinet'.freeze
-  VERSION = '0.5.1'.freeze
+  VERSION = '0.6.0'.freeze
 
   DEFAULT = {
     'name' => 'Parametric Cabinet',
@@ -96,20 +96,27 @@ module KeroCabinet
     UI.messagebox("Could not open Kero Cabinet:\n#{e.message}")
   end
 
+  def field_label(key)
+    { 'toe' => 'Toe kick height', 'timber_height' => 'Upright timber height',
+      'timber_thickness' => 'Timber thickness', 'panel' => 'Case panel thickness',
+      'drawer_thickness' => 'Drawer box thickness', 'drawer_bottom' => 'Drawer bottom thickness',
+      'weight' => 'Height weight' }.fetch(key) { key.tr('_', ' ').capitalize }
+  end
+
   def number_between!(config, key, low, high)
     n = Float(config[key])
-    raise ArgumentError, "#{key}: must be between #{low} and #{high} mm." unless n.finite? && n.between?(low, high)
+    raise ArgumentError, "#{field_label(key)}: enter #{low}-#{high} mm (current value: #{config[key]})." unless n.finite? && n.between?(low, high)
     config[key] = n
   rescue TypeError, ArgumentError => e
-    raise ArgumentError, e.message.include?(key) ? e.message : "#{key}: enter a valid number."
+    raise ArgumentError, e.message.include?(field_label(key)) ? e.message : "#{field_label(key)}: enter a valid number."
   end
 
   def integer_between!(hash, key, low, high)
     n = Integer(hash[key])
-    raise ArgumentError, "#{key}: must be between #{low} and #{high}." unless n.between?(low, high)
+    raise ArgumentError, "#{field_label(key)}: enter a value between #{low} and #{high}." unless n.between?(low, high)
     hash[key] = n
   rescue TypeError, ArgumentError => e
-    raise ArgumentError, e.message.include?(key) ? e.message : "#{key}: enter a valid integer."
+    raise ArgumentError, e.message.include?(field_label(key)) ? e.message : "#{field_label(key)}: enter a valid integer."
   end
 
   def validate_config(source)
@@ -168,19 +175,37 @@ module KeroCabinet
     end
     c['bays'].each do |bay|
       raise ArgumentError, 'Invalid bay data.' unless bay.is_a?(Hash)
-      bay['kind'] = bay['kind'].to_s
-      raise ArgumentError, 'Invalid bay type.' unless %w[door drawer open].include?(bay['kind'])
-      bay['weight'] = Float(bay['weight'])
-      raise ArgumentError, 'Bay weight must be between 0.2 and 10.' unless bay['weight'].finite? && bay['weight'].between?(0.2, 10.0)
-      integer_between!(bay, 'doors', 1, 2)
-      integer_between!(bay, 'drawers', 1, 8)
-      integer_between!(bay, 'shelves', 0, 8)
+      validate_bay_item(bay, true)
+      if bay['kind'] == 'stack'
+        unless bay['sections'].is_a?(Array) && bay['sections'].length.between?(2, 6)
+          raise ArgumentError, 'Stacked bays require 2-6 sections, ordered bottom to top.'
+        end
+        bay['sections'].each { |section| validate_bay_item(section, false) }
+      end
     end
     total = c['bays'].sum { |b| b['weight'] }
     widths = c['bays'].map { |b| c['width'] * b['weight'] / total }
     minimum = c['panel'] * 2 + (c['frame'] ? c['frame_width'] : 0) + 110
     raise ArgumentError, "Each bay must be at least #{minimum.round} mm wide. Increase the width or adjust the weights." if widths.any? { |w| w < minimum }
     c
+  end
+
+  def validate_bay_item(item, allow_stack)
+    raise ArgumentError, 'Invalid section data.' unless item.is_a?(Hash)
+    kinds = allow_stack ? %w[door drawer open stack] : %w[door drawer open]
+    raise ArgumentError, 'Invalid bay or section type.' unless kinds.include?(item['kind'])
+    begin
+      item['weight'] = Float(item['weight'])
+    rescue TypeError, ArgumentError
+      raise ArgumentError, 'Bay/section weight must be a number between 0.2 and 10.'
+    end
+    unless item['weight'].finite? && item['weight'].between?(0.2, 10)
+      raise ArgumentError, 'Bay/section weight must be between 0.2 and 10.'
+    end
+    return if item['kind'] == 'stack'
+    integer_between!(item, 'doors', 1, 2)
+    integer_between!(item, 'drawers', 1, 8)
+    integer_between!(item, 'shelves', 0, 8)
   end
 
   def materials(model)
@@ -310,6 +335,8 @@ module KeroCabinet
     cavity_top = h - t
 
     c['bays'].each_with_index do |bay, i|
+      cavity_bottom = toe + t
+      cavity_top = h - t
       start_x = bounds[i]
       end_x = bounds[i+1]
       opening_left = i.zero? ? (face_frame ? fw : t) : start_x + (face_frame ? fw/2 : t/2)
@@ -336,39 +363,68 @@ module KeroCabinet
       front_height = front_top - front_bottom
       raise ArgumentError, "Bay #{i+1}: available opening is too small." if front_width < 60 || front_height < 100
 
-      case bay['kind']
+      sections = bay['kind'] == 'stack' ? bay['sections'] : [bay]
+      total_weight = sections.sum { |section| section['weight'] }
+      section_bounds = [cavity_bottom]
+      sections.each do |section|
+        section_bounds << section_bounds.last + (h - t - toe - t) * section['weight'] / total_weight
+      end
+      section_bounds[-1] = h - t
+      outer_front_bottom, outer_front_top = front_bottom, front_top
+      sections.each_with_index do |section, section_index|
+        section_name = sections.length == 1 ? "Bay #{i+1}" : "Bay #{i+1} section #{section_index+1}"
+        lower = section_bounds[section_index]
+        upper = section_bounds[section_index+1]
+        cavity_bottom = lower + (section_index.zero? ? 0 : t/2)
+        cavity_top = upper - (section_index == sections.length-1 ? 0 : t/2)
+        front_margin = c['style'] == 'inset' ? (face_frame ? fw/2 : t/2) + g : g/2
+        front_bottom = section_index.zero? ? outer_front_bottom : lower + front_margin
+        front_top = section_index == sections.length-1 ? outer_front_top : upper - front_margin
+        front_height = front_top - front_bottom
+        if front_height < 100 || cavity_top - cavity_bottom < 100
+          raise ArgumentError, "#{section_name}: section is too short. Increase its height weight or the cabinet height."
+        end
+        if section_index > 0
+          add.call("Bay #{i+1} horizontal divider #{section_index}", 'Case',
+            cavity_left, fd, lower - t/2, cavity_width, depth_inside, t)
+          if face_frame
+            add.call("Bay #{i+1} horizontal face frame rail #{section_index}", 'Face frame',
+              opening_left, 0, lower - fw/2, opening_right - opening_left, fd, fw)
+          end
+        end
+      case section['kind']
       when 'door'
         # Inset doors occupy case depth. Keep shelves behind the door back,
         # with the configured gap, while preserving their rear alignment.
         shelf_y = c['style'] == 'inset' ? [fd, front_y + ft + g].max : fd
         shelf_depth = rear_inside - shelf_y
-        count = bay['doors']
+        count = section['doors']
         item_width = (front_width - (count - 1)*g) / count
         count.times do |j|
           x = front_left + j*(item_width + g)
-          add.call("Bay #{i+1} door #{j+1}", 'Door / drawer front',
+          add.call("#{section_name} door #{j+1}", 'Door / drawer front',
                    x, front_y, front_bottom, item_width, ft, front_height)
         end
-        bay['shelves'].times do |j|
-          z = cavity_bottom + (j+1)*(cavity_top - cavity_bottom)/(bay['shelves']+1.0) - t/2
-          add.call("Bay #{i+1} internal shelf #{j+1}", 'Case',
+        section['shelves'].times do |j|
+          z = cavity_bottom + (j+1)*(cavity_top - cavity_bottom)/(section['shelves']+1.0) - t/2
+          add.call("#{section_name} internal shelf #{j+1}", 'Case',
                    cavity_left, shelf_y, z, cavity_width, shelf_depth, t)
         end
       when 'drawer'
-        count = bay['drawers']
+        count = section['drawers']
         cell = (front_height - (count-1)*g)/count
-        raise ArgumentError, "Bay #{i+1}: drawer height is too small." if cell < 85
+        raise ArgumentError, "#{section_name}: drawer height is too small." if cell < 85
         count.times do |j|
           z_front = front_bottom + j*(cell+g)
-          add.call("Bay #{i+1} drawer front #{j+1}", 'Door / drawer front',
+          add.call("#{section_name} drawer front #{j+1}", 'Door / drawer front',
                    front_left, front_y, z_front, front_width, ft, cell)
           # Preserve outer box dimensions and runner clearances as stock changes.
           side_clearance = 12.5
           dbx = cavity_left + side_clearance
           dbw = cavity_width - 2*side_clearance
-          dby = fd + 18
+          dby = [fd + 18, front_y + ft + g].max
           dbd = rear_inside - 25 - dby
-          dbh = [125.0, cell - 25.0].min
+          dbh = [125.0, cell - 25.0, cavity_top - cavity_bottom - 8].min
           wanted_z = z_front + [12.0, (cell-dbh)/2].max
           # Respect carcass bottom and top even when an overlay front covers the rails.
           dbz = [[wanted_z, cavity_bottom + 4].max, cavity_top - dbh - 4].min
@@ -378,7 +434,7 @@ module KeroCabinet
           if dbw - 2*dt <= 0.25 || dbd - 2*dt <= 0.25 || dbh - bottom_t <= 0.25
             raise ArgumentError, 'Drawer stock is too thick for the available box dimensions.'
           end
-          tag = "Bay #{i+1} drawer #{j+1}"
+          tag = "#{section_name} drawer #{j+1}"
           add.call("#{tag} left side", 'Drawer box', dbx, dby, dbz, dt, dbd, dbh)
           add.call("#{tag} right side", 'Drawer box', dbx+dbw-dt, dby, dbz, dt, dbd, dbh)
           add.call("#{tag} front rail", 'Drawer box', dbx+dt, dby, dbz, dbw-2*dt, dt, dbh)
@@ -387,11 +443,12 @@ module KeroCabinet
                    dbw-2*dt, dbd-2*dt, bottom_t)
         end
       when 'open'
-        bay['shelves'].times do |j|
-          z = cavity_bottom + (j+1)*(cavity_top - cavity_bottom)/(bay['shelves']+1.0) - t/2
-          add.call("Bay #{i+1} open shelf #{j+1}", 'Case',
+        section['shelves'].times do |j|
+          z = cavity_bottom + (j+1)*(cavity_top - cavity_bottom)/(section['shelves']+1.0) - t/2
+          add.call("#{section_name} open shelf #{j+1}", 'Case',
                    cavity_left, fd, z, cavity_width, depth_inside, t)
         end
+      end
       end
     end
   end
@@ -523,7 +580,7 @@ module KeroCabinet
       </style>
       </head>
       <body>
-      <header><h1>Kero Cabinet</h1><p>Parametric SketchUp cabinet builder - v0.5.1</p></header>
+      <header><h1>Kero Cabinet</h1><p>Parametric SketchUp cabinet builder - v0.6.0</p></header>
       <main>
         <section class="section">
           <h2>Case dimensions</h2>
@@ -643,26 +700,56 @@ module KeroCabinet
           bays.push({kind:'door',weight:1,doors:1,drawers:4,shelves:1}); renderBays();
         }
         function removeBay(i){ if(bays.length>1){bays.splice(i,1);renderBays();} }
-        function changeBay(i,key,value){bays[i][key]=key==='kind'?value:Number(value); if(key==='kind')renderBays();}
+        function newSection(kind='door',weight=1){return {kind,weight,doors:1,drawers:1,shelves:1};}
+        function changeBay(i,key,value){
+          bays[i][key]=key==='kind'?value:Number(value);
+          if(key==='kind'){
+            if(value==='stack'&&!bays[i].sections)bays[i].sections=[newSection('drawer',1),newSection('door',3)];
+            renderBays();
+          }
+        }
+        function changeSection(i,j,key,value){bays[i].sections[j][key]=key==='kind'?value:Number(value);if(key==='kind')renderBays();}
+        function addSection(i){if(bays[i].sections.length>=6)return showError('A bay supports up to 6 stacked sections.');bays[i].sections.push(newSection());renderBays();}
+        function removeSection(i,j){if(bays[i].sections.length>2){bays[i].sections.splice(j,1);renderBays();}}
+        function moveSection(i,j,direction){const items=bays[i].sections;const target=j+direction;if(target>=0&&target<items.length){[items[j],items[target]]=[items[target],items[j]];renderBays();}}
+        function renderSections(b,i){
+          if(b.kind!=='stack')return '';
+          return '<p class="hint">Sections are ordered bottom to top. Height weights divide the available height; horizontal divider panels are added automatically.</p>'+
+          b.sections.map((section,j)=>`<div class="bay"><div class="bayhead">Section ${j+1}${j===0?' (bottom)':j===b.sections.length-1?' (top)':''}<span><button type="button" class="ghost remove" onclick="moveSection(${i},${j},-1)" ${j===0?'disabled':''}>Down</button> <button type="button" class="ghost remove" onclick="moveSection(${i},${j},1)" ${j===b.sections.length-1?'disabled':''}>Up</button> <button type="button" class="ghost remove" onclick="removeSection(${i},${j})" ${b.sections.length<=2?'disabled':''}>Remove</button></span></div>
+          <div class="grid"><div><label>Section type</label><select onchange="changeSection(${i},${j},'kind',this.value)">${['drawer','door','open'].map(kind=>`<option value="${kind}" ${section.kind===kind?'selected':''}>${{drawer:'Drawers',door:'Doors',open:'Open shelves'}[kind]}</option>`).join('')}</select></div>
+          <div><label>Height weight</label><input type="number" required min="0.2" max="10" step="0.1" value="${escapeHtml(section.weight)}" onchange="changeSection(${i},${j},'weight',this.value)"></div>
+          ${section.kind==='drawer'?`<div><label>Drawer count</label><input type="number" required min="1" max="8" value="${section.drawers}" onchange="changeSection(${i},${j},'drawers',this.value)"></div>`:section.kind==='door'?`<div><label>Door count</label><input type="number" required min="1" max="2" value="${section.doors}" onchange="changeSection(${i},${j},'doors',this.value)"></div>`:''}
+          ${section.kind!=='drawer'?`<div><label>Shelf count</label><input type="number" required min="0" max="8" value="${section.shelves}" onchange="changeSection(${i},${j},'shelves',this.value)"></div>`:''}</div></div>`).join('')+`<button type="button" class="ghost" onclick="addSection(${i})">+ Add section above</button>`;
+        }
         function renderBays(){
           document.getElementById('bays').innerHTML = bays.map((b,i)=>{
             const third = b.kind==='drawer' ? `<div><label>Drawer count</label><input type="number" min="1" max="8" value="${b.drawers}" onchange="changeBay(${i},'drawers',this.value)"></div>`
              : b.kind==='door' ? `<div><label>Door count (side by side)</label><select onchange="changeBay(${i},'doors',this.value)"><option value="1" ${b.doors==1?'selected':''}>1</option><option value="2" ${b.doors==2?'selected':''}>2</option></select></div>` : '';
-            const shelves = b.kind!=='drawer' ? `<div><label>${b.kind==='door'?'Internal shelf':'Shelf'} count</label><input type="number" min="0" max="8" value="${b.shelves}" onchange="changeBay(${i},'shelves',this.value)"></div>` : '';
+            const shelves = b.kind!=='drawer'&&b.kind!=='stack' ? `<div><label>${b.kind==='door'?'Internal shelf':'Shelf'} count</label><input type="number" min="0" max="8" value="${b.shelves}" onchange="changeBay(${i},'shelves',this.value)"></div>` : '';
             return `<div class="bay"><div class="bayhead"><span>Bay ${i+1}</span><button class="ghost remove" onclick="removeBay(${i})" type="button">Remove</button></div>
               <div class="grid"><div><label>Type</label><select onchange="changeBay(${i},'kind',this.value)">
-                <option value="door" ${b.kind==='door'?'selected':''}>Doors</option><option value="drawer" ${b.kind==='drawer'?'selected':''}>Drawers</option><option value="open" ${b.kind==='open'?'selected':''}>Open shelves</option></select></div>
-                <div><label>Width weight</label><input type="number" min="0.2" max="10" step="0.1" value="${escapeHtml(b.weight)}" onchange="changeBay(${i},'weight',this.value)"></div>${third}${shelves}</div></div>`;
+                <option value="door" ${b.kind==='door'?'selected':''}>Doors</option><option value="drawer" ${b.kind==='drawer'?'selected':''}>Drawers</option><option value="open" ${b.kind==='open'?'selected':''}>Open shelves</option><option value="stack" ${b.kind==='stack'?'selected':''}>Stacked sections</option></select></div>
+                <div><label>Width weight</label><input type="number" min="0.2" max="10" step="0.1" value="${escapeHtml(b.weight)}" onchange="changeBay(${i},'weight',this.value)"></div>${third}${shelves}</div>${renderSections(b,i)}</div>`;
           }).join('');
         }
+        const limits={width:[300,5000],height:[350,3500],depth:[250,1200],panel:[9,36],back:[3,24],front:[9,32],toe:[0,250],timber_height:[20,200],timber_thickness:[10,100],frame_width:[25,90],frame_depth:[12,36],gap:[1,6],rail_width:[40,200],drawer_thickness:[6,30],drawer_bottom:[3,24]};
+        for(const [id,[min,max]] of Object.entries(limits)){const input=document.getElementById(id);input.min=min;input.max=max;input.required=true;input.title=`Allowed range: ${min}-${max} mm`;}
+        document.addEventListener('wheel',event=>{if(document.activeElement?.type==='number')document.activeElement.blur();},{passive:true});
         function showError(message){ document.getElementById('error').textContent=message; }
         function submitConfig(){
           showError('');
+          for(const input of document.querySelectorAll('input[type=number]')){
+            if(input.disabled)continue;
+            if(input.value.trim()===''||!input.checkValidity()){
+              const label=input.id?document.querySelector(`label[for="${input.id}"]`)?.textContent:input.parentElement.querySelector('label')?.textContent;
+              showError(`${label||'Number'}: enter a value from ${input.min} to ${input.max}. Current value: ${input.value||'empty'}.`);input.focus();return;
+            }
+          }
           const c={}; for(const id of ids) c[id]=['name','style','top_construction','bottom_construction','back_construction'].includes(id)?document.getElementById(id).value:n(document.getElementById(id).value);
           c.toe_frame=document.getElementById('toe_frame').checked;
           c.frame=document.getElementById('frame').checked;
           c.construction=document.querySelector('input[name=construction]:checked').value;
-          c.bays=bays.map(b=>({...b}));
+          c.bays=JSON.parse(JSON.stringify(bays));
           if(!window.sketchup || !window.sketchup.submit) return showError('This panel must be used inside SketchUp.');
           window.sketchup.submit(JSON.stringify(c));
         }

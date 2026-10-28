@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.6.0 - 2026-10-28
+- Add 2-6 bottom-to-top horizontal sections inside each vertical bay, mixing drawers, doors, and shelves with height weights and reorder controls.
+- Generate horizontal divider panels and optional face-frame rails, with section-specific drawer and shelf bounds.
+- Add clear numeric field names, submitted values in errors, front-end range/empty checks, and mouse-wheel protection.
+- Cover stacked construction combinations, independent neighboring bays, invalid sections, and the reported numeric input values.
+
 ## v0.5.1 - 2026-10-28
 - Add independent Between sides / Full width bottom construction, including with top/back support rails.
 - Raise side-panel starts onto a full-width bottom without changing total height.
