@@ -193,6 +193,34 @@ def run_case(construction, frame, style, bay_kinds, overrides = {})
   parts.select { |part| part.name.include?('open shelf') }.each do |shelf|
     near(shelf.bounds_mm[0][1], frame ? config['frame_depth'] : 0, 'Open shelves retain full case depth')
   end
+  timber_parts = parts.select { |part| part.name.start_with?('Toe frame ') }
+  if config['toe_frame'] && config['toe'] > 0
+    raise 'Missing support frame' if timber_parts.empty?
+    front_rail = positions.fetch('Toe frame front rail')
+    rear_rail = positions.fetch('Toe frame rear rail')
+    near(front_rail[0][1], positions.fetch('Toe kick front')[1][1], 'Timber sits behind toe kick front')
+    near(front_rail[1][2], config['toe'], 'Timber supports case bottom')
+    near(front_rail[1][2] - front_rail[0][2], config['timber_height'], 'Upright timber height')
+    near(front_rail[1][1] - front_rail[0][1], config['timber_thickness'], 'Timber thickness')
+    timber_parts.each do |part|
+      min, max = part.bounds_mm
+      if part.name =~ /(?:left|right|cross) rail/
+        near(min[1], front_rail[1][1], 'Butt joint at front rail')
+        near(max[1], rear_rail[0][1], 'Butt joint at rear rail')
+      elsif part.name.include?('leg')
+        near(min[2], 0, 'Leg reaches floor')
+        near(max[2], front_rail[0][2], 'Leg supports upper frame')
+      end
+    end
+    timber_parts.combination(2) do |first, second|
+      a, b = first.bounds_mm
+      c, d = second.bounds_mm
+      overlap = 3.times.all? { |axis| [b[axis], d[axis]].min - [a[axis], c[axis]].max > 0.001 }
+      raise "Overlapping timber: #{first.name} / #{second.name}" if overlap
+    end
+  else
+    raise 'Unexpected support frame' unless timber_parts.empty?
+  end
   drawer_fronts = parts.select { |part| part.name =~ /drawer front/ }
   drawer_boxes = parts.select { |part| part.name =~ /drawer \d+ left side/ }
   raise 'missing drawer boxes' unless drawer_boxes.size == 4 * bay_kinds.count('drawer')
@@ -218,4 +246,17 @@ end
       'front' => 32, 'frame_depth' => 12, 'gap' => 6)
   end
 end
-puts 'All 20 geometry configurations passed, including inset shelf clearance and external back alignment.' 
+run_case('sides_full', false, 'inset', ['door', 'open'], 'toe' => 150)
+run_case('top_bottom_full', true, 'overlay', ['door'], 'width' => 3000)
+run_case('sides_full', false, 'inset', ['door'], 'toe' => 0)
+run_case('sides_full', false, 'inset', ['door'], 'toe' => 50, 'toe_frame' => false)
+run_case('sides_full', true, 'inset', ['door'], 'toe' => 60, 'timber_height' => 60, 'timber_thickness' => 30)
+bad = KeroCabinet.clone_defaults
+bad['toe'] = 80
+begin
+  KeroCabinet.validate_config(bad)
+  raise 'Short toe height should reject upright 100 mm timber'
+rescue ArgumentError => error
+  raise unless error.message.include?('Toe kick height')
+end
+puts 'All 25 geometry configurations passed, including butt joints, frame clearance, legs, and inset shelves.'  

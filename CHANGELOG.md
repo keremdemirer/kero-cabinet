@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.4.0 - 2026-10-28
+- Add a toe kick timber support frame, enabled by default with 50 x 100 mm stock, 100 mm upright.
+- Use butt-jointed perimeter and cross rails behind the toe kick front, plus legs for taller toe spaces.
+- Add adjustable stock dimensions and a support-frame toggle, and merge defaults when editing older cabinets.
+- Verify butt joints, non-overlap, floor contact, and disabled/zero-height cases across 25 geometry configurations.
+
 ## v0.3.1 - 2026-10-28
 - Recess shelves behind inset doors by the front thickness plus the configured gap.
 - Keep shelf rear edges aligned with the case and preserve open-shelf depth.

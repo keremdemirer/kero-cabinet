@@ -1,5 +1,5 @@
 # frozen_string_literal: true
-# Kero Cabinet v0.3.1, SketchUp 2020+; all design inputs use millimetres.
+# Kero Cabinet v0.4.0, SketchUp 2020+; all design inputs use millimetres.
 require 'sketchup.rb'
 require 'json'
 require_relative 'updater'
@@ -8,7 +8,7 @@ module KeroCabinet
   extend self
 
   DICT = 'kero_cabinet'.freeze
-  VERSION = '0.3.1'.freeze
+  VERSION = '0.4.0'.freeze
 
   DEFAULT = {
     'name' => 'Parametric Cabinet',
@@ -20,6 +20,9 @@ module KeroCabinet
     'back' => 6,
     'front' => 18,
     'toe' => 100,
+    'toe_frame' => true,
+    'timber_height' => 100,
+    'timber_thickness' => 50,
     'frame' => true,
     'frame_width' => 38,
     'frame_depth' => 20,
@@ -43,7 +46,7 @@ module KeroCabinet
     config = clone_defaults
     if instance && instance.valid?
       raw = instance.get_attribute(DICT, 'config')
-      config = JSON.parse(raw) if raw.is_a?(String)
+      config = clone_defaults.merge(JSON.parse(raw)) if raw.is_a?(String)
     end
 
     dialog = UI::HtmlDialog.new(
@@ -105,12 +108,17 @@ module KeroCabinet
     {
       'width' => [300, 5000], 'height' => [350, 3500], 'depth' => [250, 1200],
       'panel' => [9, 36], 'back' => [3, 24], 'front' => [9, 32],
-      'toe' => [0, 250], 'frame_width' => [25, 90],
+      'toe' => [0, 250], 'timber_height' => [20, 200],
+      'timber_thickness' => [10, 100], 'frame_width' => [25, 90],
       'frame_depth' => [12, 36], 'gap' => [1, 6]
     }.each { |key, (low, high)| number_between!(c, key, low, high) }
     c['construction'] = c['construction'].to_s
     unless %w[sides_full top_bottom_full].include?(c['construction'])
       raise ArgumentError, 'Construction must use full-height sides or full-width top and bottom panels.'
+    end
+    c['toe_frame'] = (c['toe_frame'] == true)
+    if c['toe_frame'] && c['toe'] > 0 && c['toe'] < c['timber_height']
+      raise ArgumentError, 'Toe kick height must be at least the upright timber height, or disable the support frame.'
     end
     c['frame'] = (c['frame'] == true)
     c['style'] = c['style'].to_s
@@ -148,7 +156,8 @@ module KeroCabinet
       'Back panel' => [198, 168, 130],
       'Face frame' => [141, 99, 66],
       'Door / drawer front' => [183, 137, 93],
-      'Drawer box' => [227, 204, 161]
+      'Drawer box' => [227, 204, 161],
+      'Toe kick timber' => [196, 159, 106]
     }
     colors.each_with_object({}) do |(name, rgb), h|
       material_name = "KC | #{name}"
@@ -230,6 +239,8 @@ module KeroCabinet
     c['bays'].each { |bay| bounds << bounds.last + w * bay['weight'] / bay_total }
     bounds[-1] = w
     n = c['bays'].length
+
+    generate_toe_frame(add, c, bounds, fd) if c['toe_frame'] && toe > 0
 
     # Full-height intermediate panels and face-frame stiles align with bays.
     (1...n).each do |i|
@@ -336,6 +347,53 @@ module KeroCabinet
     end
   end
 
+  # Full-width front/rear rails; transverse members butt between them.
+  # At the default 100 mm toe height the upright 100 mm timbers sit on the floor.
+  def generate_toe_frame(add, c, bounds, front_offset)
+    w, d, toe = c.values_at('width', 'depth', 'toe')
+    height, thickness = c.values_at('timber_height', 'timber_thickness')
+    recess = [65.0, (d - front_offset) / 3.0].min
+    front_y = front_offset + recess + c['panel']
+    rear_y = d - thickness
+    inside_depth = rear_y - front_y - thickness
+    if inside_depth <= 0.25 || w <= 2 * thickness + 0.25
+      raise ArgumentError, 'The toe kick support frame does not fit. Reduce timber thickness or increase case dimensions.'
+    end
+    z = toe - height
+    add.call('Toe frame front rail', 'Toe kick timber', 0, front_y, z, w, thickness, height)
+    add.call('Toe frame rear rail', 'Toe kick timber', 0, rear_y, z, w, thickness, height)
+    add.call('Toe frame left rail', 'Toe kick timber', 0, front_y + thickness, z, thickness, inside_depth, height)
+    add.call('Toe frame right rail', 'Toe kick timber', w - thickness, front_y + thickness, z, thickness, inside_depth, height)
+
+    # Support each bay boundary, adding intermediate supports for spans over 600 mm.
+    centers = bounds[1...-1].dup
+    bounds.each_cons(2) do |left, right|
+      divisions = ((right - left) / 600.0).ceil
+      (1...divisions).each { |i| centers << left + (right - left) * i / divisions }
+    end
+    centers.sort.each_with_index do |x, i|
+      if x - thickness / 2 < thickness || x + thickness / 2 > w - thickness
+        raise ArgumentError, 'A toe frame cross rail is too close to an end rail. Reduce timber thickness.'
+      end
+      add.call("Toe frame cross rail #{i + 1}", 'Toe kick timber',
+        x - thickness / 2, front_y + thickness, z, thickness, inside_depth, height)
+    end
+
+    # Taller toe spaces need legs below the top frame to reach the floor.
+    return unless z > 0.25
+    leg_width = height
+    supports = [leg_width / 2.0] + centers.sort + [w - leg_width / 2.0]
+    if supports.each_cons(2).any? { |left, right| right - left < leg_width }
+      raise ArgumentError, 'Toe frame legs would overlap. Reduce upright timber height or increase bay widths.'
+    end
+    supports.each_with_index do |x, i|
+      [front_y, rear_y].each_with_index do |y, j|
+        add.call("Toe frame leg #{i + 1} #{j == 0 ? 'front' : 'rear'}", 'Toe kick timber',
+          x - leg_width / 2, y, 0, leg_width, thickness, z)
+      end
+    end
+  end
+
   def build_cabinet(c, instance)
     model = Sketchup.active_model
     model.start_operation(instance ? 'Edit Kero Cabinet' : 'Create Kero Cabinet', true)
@@ -415,7 +473,7 @@ module KeroCabinet
       </style>
       </head>
       <body>
-      <header><h1>Kero Cabinet</h1><p>Parametric SketchUp cabinet builder - v0.3.1</p></header>
+      <header><h1>Kero Cabinet</h1><p>Parametric SketchUp cabinet builder - v0.4.0</p></header>
       <main>
         <section class="section">
           <h2>Case dimensions</h2>
@@ -431,6 +489,15 @@ module KeroCabinet
             <div><label for="gap">Front gap (mm)</label><input id="gap" type="number" step="0.5"></div>
           </div>
           <p class="hint">Depth is measured to the rear edge of the case. The external back adds its thickness; front thickness is excluded. Enter the total height including the toe kick.</p>
+        </section>
+        <section class="section">
+          <h2>Toe kick support frame</h2>
+          <div class="check"><input id="toe_frame" type="checkbox"><label for="toe_frame">Create timber support frame</label></div>
+          <div class="grid two" style="margin-top:10px">
+            <div><label for="timber_height">Upright timber height (mm)</label><input id="timber_height" type="number" min="20" max="200"></div>
+            <div><label for="timber_thickness">Timber thickness (mm)</label><input id="timber_thickness" type="number" min="10" max="100"></div>
+          </div>
+          <p class="hint">Default: 50 x 100 mm timber with 100 mm upright. Butt joints, full-width front/rear rails and cross rails at bay boundaries, with extra rails for spans over 600 mm. The frame sits behind the toe kick front; taller toe spaces receive legs. No frame is created at zero toe height.</p>
         </section>
         <section class="section">
           <h2>Case construction</h2>
@@ -486,9 +553,10 @@ module KeroCabinet
       <script>
         const initial = /* INITIAL_CONFIG */ null;
         let bays = JSON.parse(JSON.stringify(initial.bays));
-        const ids = ['name','width','height','depth','panel','back','front','toe','gap','style','frame_width','frame_depth'];
+        const ids = ['name','width','height','depth','panel','back','front','toe','gap','style','frame_width','frame_depth','timber_height','timber_thickness'];
         for (const id of ids) document.getElementById(id).value = initial[id];
         document.getElementById('frame').checked = !!initial.frame;
+        document.getElementById('toe_frame').checked = !!initial.toe_frame;
         (document.querySelector('input[name=construction][value="'+(initial.construction||'sides_full')+'"]') || document.querySelector('input[name=construction][value=sides_full]')).checked = true;
         const n = (v) => Number(v);
         const escapeHtml = (s) => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
@@ -516,6 +584,7 @@ module KeroCabinet
         function submitConfig(){
           showError('');
           const c={}; for(const id of ids) c[id]=id==='name'||id==='style'?document.getElementById(id).value:n(document.getElementById(id).value);
+          c.toe_frame=document.getElementById('toe_frame').checked;
           c.frame=document.getElementById('frame').checked;
           c.construction=document.querySelector('input[name=construction]:checked').value;
           c.bays=bays.map(b=>({...b}));
