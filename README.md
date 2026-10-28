@@ -2,7 +2,7 @@
 
 **A parametric cabinet builder for SketchUp.** Enter dimensions and a bay layout to create an editable cabinet component.
 
-Version: **v0.7.0 (early development)**. The original project reports use in SketchUp 2025. Automated tests use a mock SketchUp API; they are not runtime integration tests.
+Version: **v0.8.0 (early development)**. The original project reports use in SketchUp 2025. Automated tests use a mock SketchUp API; they are not runtime integration tests.
 
 ## Features
 
@@ -22,14 +22,14 @@ The plugin does not generate cut lists. Separate part components are intended fo
 
 1. Download the RBZ from the `kero-cabinet-rbz` artifact of a successful GitHub Actions run, or build it locally.
 2. In SketchUp, open **Extensions > Extension Manager > Install Extension**.
-3. Select `Kero_Cabinet_v0.7.0.rbz` and restart SketchUp.
+3. Select `Kero_Cabinet_v0.8.0.rbz` and restart SketchUp.
 4. Choose **Extensions > Kero Cabinet > Create new cabinet...**.
 
 To edit a cabinet, select its component and choose **Kero Cabinet | Edit parameters** from the context menu, or **Edit selected cabinet...** from the extension menu.
 
 ## Updates from GitHub
 
-Install v0.7.0 once using the RBZ. Future releases can be installed from
+Install v0.8.0 once using the RBZ. Future releases can be installed from
 **Extensions > Kero Cabinet > Check for updates...**, without downloading or
 installing another RBZ manually. Save your work and restart SketchUp after an update.
 
@@ -59,7 +59,7 @@ Internal shelves behind inset doors start behind the door back with the configur
 ### Update connection troubleshooting
 
 Internet access in a browser does not prove that SketchUp can reach GitHub.
-From v0.7.0 the updater uses SketchUp's native HTTP transport and reports the
+From v0.8.0 the updater uses SketchUp's native HTTP transport and reports the
 actual failure category. Check application firewall/proxy/VPN settings when
 SketchUp cannot reach `api.github.com`. Certificate checks are never disabled.
 If an older updater cannot download this fix, install the current RBZ once via
@@ -120,7 +120,7 @@ cannot fit inside the box is rejected. These settings apply to all drawer bays.
 
 ### Shallow drawers and side-mount slide profiles
 
-Choose **Drawer slide profile** under Drawer construction. The default Easy-close
+Choose **Drawer hardware** under Drawer construction. The default Easy-close
 profile uses a 47.7 mm minimum box height and 13.5 mm side clearance (3832EC
 reference). Low-profile uses a 35.1 mm minimum box height and 13.0 mm side
 clearance (2132C reference). These rounded minimum heights come from manufacturer
@@ -135,8 +135,33 @@ Errors report the available front/opening and required height.
 
 Profiles cover minimum height and side space only. They do not certify hardware
 compatibility: slide length increments, maximum width, loads, mounting brackets,
-setbacks, fasteners and holes must follow the exact product data. Undermount
-systems are not covered. See [Hardware references](HARDWARE.md).
+setbacks, fasteners and holes must follow the exact product data. Undermount uses the separate TANDEM reference described below. See [Hardware references](HARDWARE.md).
+
+### Undermount hardware
+
+Select **Drawer hardware > Undermount - Blum TANDEM 563H reference**. Side-mount
+profiles remain in their own option group. Existing models retain their selected
+side-mount profile unless changed.
+
+- Supported side stock: **12-16 mm** (16 mm manufacturer maximum; 12 mm is the
+  lower bound supported by this reference implementation).
+- Inner box width: **runner opening width minus 42 mm**. Outer width adds twice
+  the selected side thickness. In face-frame cabinets, use the clear face-frame
+  opening; mounting blocks/brackets still need separate design.
+- Bottom recess: **13 mm**. Front/back box members are raised by the same amount,
+  leaving the underside open. This is simplified stock geometry, not exact
+  manufacturer rear-notch machining.
+- Reserve **14 mm below and 6 mm above** the box. Minimum box height is computed
+  as recess + bottom thickness + 10 mm usable interior; it is a plugin allowance,
+  not a published minimum drawer height.
+- Drawer length choices: **229, 305, 381, 457, 533 mm**, default 457. Check enough
+  depth remains behind the placed box front: length + 24 mm, or +37 mm for 229.
+  This is a conservative depth fit check; bracket ranges require product review.
+
+This profile is based on the [Blum 563H/563 installation sheet](https://d2.blum.com/services/BEC003/tdm563h_ma_dok_bus_%24sen-us_%24aof_%24v4.pdf).
+Hook holes, locking devices, exact rear notches, grooves, runner models and drilling
+are **not generated**. Prepare them with the manufacturer template before making
+a production drawer. The generated box is not a complete hardware-ready cut plan.
 
 ## Toe kick timber support frame
 
@@ -192,12 +217,13 @@ ruby -c kero_cabinet/core.rb
 ruby test/construction_test.rb
 ruby test/stack_test.rb
 ruby test/shallow_drawer_test.rb
+ruby test/undermount_test.rb
 ruby test/updater_test.rb
 python3 scripts/update_manifest.py --check
 bash scripts/build.sh
 ```
 
-Output: `dist/Kero_Cabinet_v0.7.0.rbz`.
+Output: `dist/Kero_Cabinet_v0.8.0.rbz`.
 
 CI checks text, Ruby syntax, 27 geometry configurations, and archive integrity on pushes and pull requests. Successful runs upload the installation package.
 
@@ -218,4 +244,4 @@ Stored configuration keys and enum values remain compatible. Existing user-enter
 
 No license has been selected. No new license is added by this translation.
 
-From v0.7.0, overlay front thickness is also included in the saved depth value. Regenerating an older overlay cabinet with the same input shortens the case by the front thickness. Increase the input by the front thickness only if you want to preserve the old physical depth.
+From v0.8.0, overlay front thickness is also included in the saved depth value. Regenerating an older overlay cabinet with the same input shortens the case by the front thickness. Increase the input by the front thickness only if you want to preserve the old physical depth.

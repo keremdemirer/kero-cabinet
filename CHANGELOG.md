@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.8.0 - 2026-10-28
+- Separate side-mount and undermount hardware choices and add a Blum TANDEM 563H geometry reference.
+- Compute inner box width from opening minus 42 mm, recess the bottom 13 mm, and reserve 14/6 mm lower/upper clearance.
+- Support 12-16 mm sides and selectable nominal drawer lengths with depth validation.
+- Document that hook bores, exact notches, grooves and locking hardware are not generated.
+- Verify geometry across face-frame choices, stock thicknesses and five nominal drawer lengths.
+
 ## v0.7.0 - 2026-10-28
 - Replace fixed drawer height limits with selectable side-mount height/side-space profiles referenced to Accuride 2132C and 3832EC.
 - Adapt shallow box height to front and cavity space, retaining clearance and bottom-stock checks.

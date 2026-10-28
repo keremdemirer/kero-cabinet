@@ -1,5 +1,5 @@
 # frozen_string_literal: true
-# Kero Cabinet v0.7.0, SketchUp 2020+; all design inputs use millimetres.
+# Kero Cabinet v0.8.0, SketchUp 2020+; all design inputs use millimetres.
 require 'sketchup.rb'
 require 'json'
 require_relative 'updater'
@@ -8,7 +8,7 @@ module KeroCabinet
   extend self
 
   DICT = 'kero_cabinet'.freeze
-  VERSION = '0.7.0'.freeze
+  VERSION = '0.8.0'.freeze
 
   DEFAULT = {
     'name' => 'Parametric Cabinet',
@@ -24,6 +24,7 @@ module KeroCabinet
     'drawer_thickness' => 12,
     'drawer_bottom' => 12,
     'drawer_slide' => 'side_48',
+    'undermount_length' => 457,
     'back' => 6,
     'front' => 18,
     'toe' => 100,
@@ -124,11 +125,17 @@ module KeroCabinet
   # Clearances above/below the box are Kero Cabinet allowances, not quoted specs.
   DRAWER_SLIDES = {
     'side_35' => { name: 'Low-profile side mount (2132C reference)', minimum: 35.1, side: 13.0 },
-    'side_48' => { name: 'Easy-close side mount (3832EC reference)', minimum: 47.7, side: 13.5 }
+    'side_48' => { name: 'Easy-close side mount (3832EC reference)', minimum: 47.7, side: 13.5 },
+    'undermount_563h' => { name: 'Undermount (TANDEM 563H reference)', minimum: 0, recess: 13, lower: 14, upper: 6 }
   }.freeze
 
   def drawer_minimum(c)
-    [DRAWER_SLIDES.fetch(c['drawer_slide'])[:minimum], c['drawer_bottom'] + 10.0].max
+    profile = DRAWER_SLIDES.fetch(c['drawer_slide'])
+    [profile[:minimum], profile.fetch(:recess, 0) + c['drawer_bottom'] + 10.0].max
+  end
+
+  def drawer_vertical_allowance(c)
+    c['drawer_slide'] == 'undermount_563h' ? 20 : 8
   end
 
   def overlay_projection(c)
@@ -160,7 +167,16 @@ module KeroCabinet
       'frame_depth' => [12, 36], 'gap' => [1, 6]
     }.each { |key, (low, high)| number_between!(c, key, low, high) }
     unless DRAWER_SLIDES.key?(c['drawer_slide'])
-      raise ArgumentError, 'Select a supported side-mount drawer slide profile.'
+      raise ArgumentError, 'Select a supported drawer slide profile.'
+    end
+    if c['drawer_slide'] == 'undermount_563h'
+      if c['drawer_thickness'] < 12 || c['drawer_thickness'] > 16
+        raise ArgumentError, 'The TANDEM 563H reference supports 12-16 mm drawer sides. Change Drawer box thickness or select Side mount.'
+      end
+      integer_between!(c, 'undermount_length', 229, 533)
+      unless [229, 305, 381, 457, 533].include?(c['undermount_length'])
+        raise ArgumentError, 'Choose an available TANDEM drawer length: 229, 305, 381, 457, or 533 mm.'
+      end
     end
     c['construction'] = c['construction'].to_s
     unless %w[sides_full top_bottom_full].include?(c['construction'])
@@ -391,7 +407,7 @@ module KeroCabinet
       end
       front_width = front_right - front_left
       front_height = front_top - front_bottom
-      raise ArgumentError, "Bay #{i+1}: available opening is too small." if front_width < 60 || front_height < (bay['kind'] == 'drawer' ? drawer_minimum(c) + 8 : 100)
+      raise ArgumentError, "Bay #{i+1}: available opening is too small." if front_width < 60 || front_height < (bay['kind'] == 'drawer' ? drawer_minimum(c) + drawer_vertical_allowance(c) : 100)
 
       sections = bay['kind'] == 'stack' ? bay['sections'] : [bay]
       total_weight = sections.sum { |section| section['weight'] }
@@ -411,7 +427,7 @@ module KeroCabinet
         front_bottom = section_index.zero? ? outer_front_bottom : lower + front_margin
         front_top = section_index == sections.length-1 ? outer_front_top : upper - front_margin
         front_height = front_top - front_bottom
-        minimum_section = section['kind'] == 'drawer' ? drawer_minimum(c) + 8 : 100
+        minimum_section = section['kind'] == 'drawer' ? drawer_minimum(c) + drawer_vertical_allowance(c) : 100
         if front_height < minimum_section || cavity_top - cavity_bottom < minimum_section
           label = sections.length == 1 ? section_name : "Bay #{i+1}, #{section_index == sections.length-1 ? 'top' : section_index.zero? ? 'bottom' : 'middle'} section"
           raise ArgumentError, "#{label}: available front #{front_height.round(1)} mm, internal opening #{(cavity_top-cavity_bottom).round(1)} mm. Need at least #{minimum_section.round(1)} mm for the selected contents/slide. Increase this section's height ratio or select a lower-profile slide."
@@ -446,35 +462,46 @@ module KeroCabinet
         count = section['drawers']
         cell = (front_height - (count-1)*g)/count
         required_box = drawer_minimum(c)
-        if cell < required_box + 8
-          raise ArgumentError, "#{section_name}: each drawer front has #{cell.round(1)} mm; this slide and stock need at least #{(required_box+8).round(1)} mm. Reduce drawer count or increase the section height."
+        if cell < required_box + drawer_vertical_allowance(c)
+          raise ArgumentError, "#{section_name}: each drawer front has #{cell.round(1)} mm; this slide and stock need at least #{(required_box+drawer_vertical_allowance(c)).round(1)} mm. Reduce drawer count or increase the section height."
         end
         count.times do |j|
           z_front = front_bottom + j*(cell+g)
           add.call("#{section_name} drawer front #{j+1}", 'Door / drawer front',
                    front_left, front_y, z_front, front_width, ft, cell)
           # Preserve outer box dimensions and runner clearances as stock changes.
-          side_clearance = DRAWER_SLIDES.fetch(c['drawer_slide'])[:side]
-          dbx = cavity_left + side_clearance
-          dbw = cavity_width - 2*side_clearance
-          dby = [fd + 18, front_y + ft + g].max
-          dbd = rear_inside - 25 - dby
-          dbh = [125.0, cell - 8.0, cavity_top - cavity_bottom - 8].min
-          wanted_z = z_front + (cell-dbh)/2
-          # Respect carcass bottom and top even when an overlay front covers the rails.
-          dbz = [[wanted_z, cavity_bottom + 4].max, cavity_top - dbh - 4].min
+          profile = DRAWER_SLIDES.fetch(c['drawer_slide'])
+          undermount = c['drawer_slide'] == 'undermount_563h'
           dt = c['drawer_thickness']
           bottom_t = c['drawer_bottom']
+          side_clearance = undermount ? 21.0 - dt : profile[:side]
+          runner_left = undermount && face_frame ? opening_left : cavity_left
+          runner_width = undermount && face_frame ? opening_right - opening_left : cavity_width
+          dbx = runner_left + side_clearance
+          dbw = runner_width - 2*side_clearance
+          dby = [fd + 18, front_y + ft + g].max
+          dbd = undermount ? c['undermount_length'] : rear_inside - 25 - dby
+          rear_allowance = undermount ? (dbd == 229 ? 37 : 24) : 25
+          if undermount && rear_inside - dby < dbd + rear_allowance
+            raise ArgumentError, "#{section_name}: the #{dbd} mm TANDEM drawer needs at least #{dbd+rear_allowance} mm behind the box front. Select a shorter length or increase depth."
+          end
+          lower_clearance = undermount ? 14.0 : 4.0
+          upper_clearance = undermount ? 6.0 : 4.0
+          allowance = lower_clearance + upper_clearance
+          recess = undermount ? 13.0 : 0.0
+          dbh = [125.0, cell - allowance, cavity_top - cavity_bottom - allowance].min
+          wanted_z = undermount ? z_front + lower_clearance : z_front + (cell-dbh)/2
+          dbz = [[wanted_z, cavity_bottom + lower_clearance].max, cavity_top - dbh - upper_clearance].min
           raise ArgumentError, 'Insufficient internal space for the drawer box.' if dbw < 80 || dbd < 100 || dbh + 0.001 < required_box
-          if dbw - 2*dt <= 0.25 || dbd - 2*dt <= 0.25 || dbh - bottom_t <= 0.25
+          if dbw - 2*dt <= 0.25 || dbd - 2*dt <= 0.25 || dbh - recess - bottom_t <= 0.25
             raise ArgumentError, 'Drawer stock is too thick for the available box dimensions.'
           end
           tag = "#{section_name} drawer #{j+1}"
           add.call("#{tag} left side", 'Drawer box', dbx, dby, dbz, dt, dbd, dbh)
           add.call("#{tag} right side", 'Drawer box', dbx+dbw-dt, dby, dbz, dt, dbd, dbh)
-          add.call("#{tag} front rail", 'Drawer box', dbx+dt, dby, dbz, dbw-2*dt, dt, dbh)
-          add.call("#{tag} back rail", 'Drawer box', dbx+dt, dby+dbd-dt, dbz, dbw-2*dt, dt, dbh)
-          add.call("#{tag} bottom", 'Drawer box', dbx+dt, dby+dt, dbz,
+          add.call("#{tag} front rail", 'Drawer box', dbx+dt, dby, dbz+recess, dbw-2*dt, dt, dbh-recess)
+          add.call("#{tag} back rail", 'Drawer box', dbx+dt, dby+dbd-dt, dbz+recess, dbw-2*dt, dt, dbh-recess)
+          add.call("#{tag} bottom", 'Drawer box', dbx+dt, dby+dt, dbz+recess,
                    dbw-2*dt, dbd-2*dt, bottom_t)
         end
       when 'open'
@@ -619,7 +646,7 @@ module KeroCabinet
       </style>
       </head>
       <body>
-      <header><h1>Kero Cabinet</h1><p>Parametric SketchUp cabinet builder - v0.7.0</p></header>
+      <header><h1>Kero Cabinet</h1><p>Parametric SketchUp cabinet builder - v0.8.0</p></header>
       <main>
         <section class="section">
           <h2>Case dimensions</h2>
@@ -700,8 +727,9 @@ module KeroCabinet
         </section>
         <section class="section">
           <h2>Drawer construction</h2>
-          <div style="margin-bottom:12px"><label for="drawer_slide">Drawer slide profile</label><select id="drawer_slide"><option value="side_48">Easy-close side mount - 47.7 mm min. box (3832EC)</option><option value="side_35">Low-profile side mount - 35.1 mm min. box (2132C)</option></select></div>
-          <p class="hint">Height/side-space references only. Kero Cabinet reserves 4 mm above and below the box, plus at least 10 mm usable above its bottom. Actual length, width limits, mounting brackets and holes must match the hardware datasheet. Undermount runners are not covered.</p>
+          <div style="margin-bottom:12px"><label for="drawer_slide">Drawer hardware</label><select id="drawer_slide" onchange="updateDrawerHardware()"><optgroup label="Side mount"><option value="side_48">Side mount - Easy-close / 47.7 mm min. box</option><option value="side_35">Side mount - Low-profile / 35.1 mm min. box</option></optgroup><optgroup label="Undermount"><option value="undermount_563h">Undermount - Blum TANDEM 563H reference</option></optgroup></select></div>
+          <div style="margin-bottom:12px"><label for="undermount_length">Undermount drawer length (mm)</label><select id="undermount_length"><option>229</option><option>305</option><option>381</option><option>457</option><option>533</option></select></div>
+          <p id="hardware_hint" class="hint"></p>
           <div class="grid two">
             <div><label for="drawer_thickness">Drawer box thickness (mm)</label><input id="drawer_thickness" type="number" min="6" max="30"></div>
             <div><label for="drawer_bottom">Drawer bottom thickness (mm)</label><input id="drawer_bottom" type="number" min="3" max="24"></div>
@@ -719,7 +747,7 @@ module KeroCabinet
       <script>
         const initial = /* INITIAL_CONFIG */ null;
         let bays = JSON.parse(JSON.stringify(initial.bays));
-        const ids = ['name','width','height','depth','panel','back','front','toe','gap','style','frame_width','frame_depth','timber_height','timber_thickness','top_construction','bottom_construction','back_construction','rail_width','drawer_thickness','drawer_bottom','drawer_slide'];
+        const ids = ['name','width','height','depth','panel','back','front','toe','gap','style','frame_width','frame_depth','timber_height','timber_thickness','top_construction','bottom_construction','back_construction','rail_width','drawer_thickness','drawer_bottom','drawer_slide','undermount_length'];
         for (const id of ids) document.getElementById(id).value = initial[id];
         document.getElementById('frame').checked = !!initial.frame;
         document.getElementById('toe_frame').checked = !!initial.toe_frame;
@@ -732,6 +760,11 @@ module KeroCabinet
           for(const radio of document.querySelectorAll('input[name=construction]')) radio.disabled=rails;
           document.getElementById('rail_width').disabled=!rails;
           document.getElementById('back').disabled=document.getElementById('back_construction').value==='rails';
+        }
+        function updateDrawerHardware(){
+          const under=document.getElementById('drawer_slide').value==='undermount_563h';
+          document.getElementById('undermount_length').disabled=!under;
+          document.getElementById('hardware_hint').textContent=under?'TANDEM reference: 12-16 mm sides; inside width = opening minus 42 mm; 13 mm recessed bottom; 14 mm below and 6 mm above the box. Front/back members are raised to leave the underside open. Hook holes, exact rear notches, locking devices and hardware models are not generated; prepare them using the manufacturer template.':'Side-mount height and side-space references. Kero Cabinet reserves 4 mm above and below the box. Check actual length, width limits, mounting and holes against the hardware datasheet.';
         }
         function updateFrame(){
           for(const id of ['frame_width','frame_depth']) document.getElementById(id).disabled = !document.getElementById('frame').checked;
@@ -810,7 +843,7 @@ module KeroCabinet
           if(!window.sketchup || !window.sketchup.submit) return showError('This panel must be used inside SketchUp.');
           window.sketchup.submit(JSON.stringify(c));
         }
-        updateFrame();updateConstruction();renderBays();
+        updateFrame();updateConstruction();updateDrawerHardware();renderBays();
       </script>
       </body>
       </html>
