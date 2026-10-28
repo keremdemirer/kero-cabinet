@@ -1,5 +1,5 @@
 # frozen_string_literal: true
-# Kero Cabinet v0.6.3, SketchUp 2020+; all design inputs use millimetres.
+# Kero Cabinet v0.6.4, SketchUp 2020+; all design inputs use millimetres.
 require 'sketchup.rb'
 require 'json'
 require_relative 'updater'
@@ -8,7 +8,7 @@ module KeroCabinet
   extend self
 
   DICT = 'kero_cabinet'.freeze
-  VERSION = '0.6.3'.freeze
+  VERSION = '0.6.4'.freeze
 
   DEFAULT = {
     'name' => 'Parametric Cabinet',
@@ -119,6 +119,21 @@ module KeroCabinet
     raise ArgumentError, e.message.include?(field_label(key)) ? e.message : "#{field_label(key)}: enter a valid integer."
   end
 
+  def overlay_projection(c)
+    return 0 unless c['style'] == 'overlay' && c['bays'].is_a?(Array)
+    fronts = c['bays'].any? do |bay|
+      next false unless bay.is_a?(Hash)
+      %w[door drawer].include?(bay['kind']) ||
+        (bay['kind'] == 'stack' && bay['sections'].is_a?(Array) &&
+          bay['sections'].any? { |section| section.is_a?(Hash) && %w[door drawer].include?(section['kind']) })
+    end
+    fronts ? c['front'] : 0
+  end
+
+  def case_depth(c)
+    c['depth'] - (c['back_construction'] == 'full' ? c['back'] : 0) - overlay_projection(c)
+  end
+
   def validate_config(source)
     raise ArgumentError, 'Invalid configuration data.' unless source.is_a?(Hash)
     c = clone_defaults.merge(source)
@@ -159,10 +174,10 @@ module KeroCabinet
       raise ArgumentError, 'Height is insufficient for the toe kick and top/bottom sections.'
     end
     frame_depth = c['frame'] ? c['frame_depth'] : 0.0
-    if c['depth'] - (c['back_construction'] == 'full' ? c['back'] : 0) - frame_depth < 190
+    if case_depth(c) - frame_depth < 190
       raise ArgumentError, 'Case depth is too small.'
     end
-    case_rear = c['depth'] - (c['back_construction'] == 'full' ? c['back'] : 0)
+    case_rear = case_depth(c)
     rear_limit = case_rear - (c['back_construction'] == 'rails' ? c['panel'] : 0)
     if c['top_construction'] == 'rails' && rear_limit - frame_depth <= 2 * c['rail_width']
       raise ArgumentError, 'Top support rails need more depth or a smaller rail width.'
@@ -257,7 +272,7 @@ module KeroCabinet
 
   def generate_parts(entities, c, model)
     w, h, d = c.values_at('width', 'height', 'depth')
-    d -= c['back'] if c['back_construction'] == 'full'
+    d = case_depth(c)
     t, bt, ft, toe = c.values_at('panel', 'back', 'front', 'toe')
     face_frame = c['frame']
     fw = face_frame ? c['frame_width'] : 0.0
@@ -457,7 +472,7 @@ module KeroCabinet
   # At the default 100 mm toe height the upright 100 mm timbers sit on the floor.
   def generate_toe_frame(add, c, bounds, front_offset)
     w, d, toe = c.values_at('width', 'depth', 'toe')
-    d -= c['back'] if c['back_construction'] == 'full'
+    d = case_depth(c)
     height, thickness = c.values_at('timber_height', 'timber_thickness')
     recess = [65.0, (d - front_offset) / 3.0].min
     front_y = front_offset + recess + c['panel']
@@ -584,7 +599,7 @@ module KeroCabinet
       </style>
       </head>
       <body>
-      <header><h1>Kero Cabinet</h1><p>Parametric SketchUp cabinet builder - v0.6.3</p></header>
+      <header><h1>Kero Cabinet</h1><p>Parametric SketchUp cabinet builder - v0.6.4</p></header>
       <main>
         <section class="section">
           <h2>Case dimensions</h2>
@@ -592,13 +607,13 @@ module KeroCabinet
             <div><label for="name">Component name</label><input id="name" type="text" style="min-width:0"></div>
             <div><label for="width">Width (mm)</label><input id="width" type="number" step="1"></div>
             <div><label for="height">Height (mm)</label><input id="height" type="number" step="1"></div>
-            <div><label for="depth">Depth incl. back (mm)</label><input id="depth" type="number" step="1"></div>
+            <div><label for="depth">Overall depth (mm)</label><input id="depth" type="number" step="1"></div>
             <div><label for="panel">Case panel (mm)</label><input id="panel" type="number" step="1"></div>
             <div><label for="back">Back panel (mm)</label><input id="back" type="number" step="1"></div>
             <div><label for="front">Door/front thickness (mm)</label><input id="front" type="number" step="1"></div>
             <div><label for="gap">Front gap (mm)</label><input id="gap" type="number" step="0.5"></div>
           </div>
-          <p class="hint">Depth includes the external back panel. The case is shortened by the back thickness; overlay fronts project forward separately. Enter the total height including the toe kick.</p>
+          <p class="hint">Depth includes the back and any overlay fronts. The case is shortened to keep the requested overall depth. Enter the total height including the toe kick.</p>
         </section>
         <section class="section">
           <h2>Toe kick</h2>

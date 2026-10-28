@@ -129,7 +129,8 @@ def run_case(construction, frame, style, bay_kinds, overrides = {})
   }
   conf.merge!(overrides)
   config = KeroCabinet.validate_config(conf)
-  case_depth = config['depth'] - config['back']
+  projection = style == 'overlay' && bay_kinds.any? { |kind| %w[door drawer].include?(kind) } ? config['front'] : 0
+  case_depth = config['depth'] - config['back'] - projection
   model = MockModel.new
   Sketchup.active_model = model
   cabinet = MockEntities.new
@@ -155,7 +156,8 @@ def run_case(construction, frame, style, bay_kinds, overrides = {})
   near(back[0][0], 0.0, 'External back covers entire case width (start)')
   near(back[1][0], config['width'], 'External back covers entire case width (end)')
   near(back[0][1], case_depth, 'External back starts beyond the carcass')
-  near(back[1][1], config['depth'], 'Overall depth includes external back')
+  near(back[1][1], config['depth'] - projection, 'Rear plane accounts for overlay projection')
+  near(parts.map { |part| part.bounds_mm[1][1] }.max - parts.map { |part| part.bounds_mm[0][1] }.min, config['depth'], 'Overall depth includes fronts and back')
   near(back[1][1] - back[0][1], config['back'], 'External back thickness')
   near(back[0][2], config['toe'], 'External back starts from case bottom')
   near(back[1][2], config['height'], 'External back extends to case top')

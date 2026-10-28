@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.6.4 - 2026-10-28
+- Include overlay fronts within the requested overall depth and shorten the case, internal parts, and toe frame consistently.
+- Reserve no front thickness for all-open layouts, including open-only stacked sections.
+- Clarify the Overall depth label and verify bounding-box depth across front thicknesses and back modes.
+
 ## v0.6.3 - 2026-10-28
 - Simplify the cabinet layout editor with direct content buttons, compact section controls, and a schematic preview.
 - Show normalized height and width percentages alongside relative ratios.

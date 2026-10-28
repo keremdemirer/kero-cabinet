@@ -21,11 +21,12 @@ class ConstructionTest < Minitest::Test
     %w[full rails].product(%w[full rails], %w[inset overlay], [true, false]).each do |top, back, style, frame|
       c, parts = build('construction' => 'top_bottom_full', 'top_construction' => top,
         'back_construction' => back, 'style' => style, 'frame' => frame)
-      rear = c['depth'] - (back == 'full' ? c['back'] : 0)
+      projection = style == 'overlay' ? c['front'] : 0
+      rear = c['depth'] - (back == 'full' ? c['back'] : 0) - projection
       assert_equal top == 'full', parts.key?('Top panel')
       assert_equal back == 'full', parts.key?('Back panel')
       assert_near rear, parts.fetch('Left side').bounds_mm[1][1]
-      assert_near c['depth'], parts.values.map { |p| p.bounds_mm[1][1] }.max
+      assert_near c['depth'], parts.values.map { |p| p.bounds_mm[1][1] }.max - parts.values.map { |p| p.bounds_mm[0][1] }.min
       if top == 'rails' || back == 'rails'
         assert_equal 'sides_full', c['construction']
         assert_near c['toe'], parts.fetch('Left side').bounds_mm[0][2]
@@ -89,6 +90,18 @@ class ConstructionTest < Minitest::Test
       assert_equal(arrangement == 'top_bottom_full' ? 'full' : 'between', result['bottom_construction'])
     end
     assert_raises(ArgumentError) { build('bottom_construction' => 'rails') }
+  end
+
+  def test_overall_depth_with_and_without_overlay_fronts
+    %w[full rails].product(%w[door drawer open], [9, 18, 32]).each do |back, kind, thickness|
+      source = { 'style' => 'overlay', 'back_construction' => back, 'front' => thickness,
+        'bays' => [{ 'kind' => kind, 'weight' => 1, 'doors' => 1, 'drawers' => 2, 'shelves' => 2 }] }
+      c, parts = build(source)
+      min = parts.values.map { |p| p.bounds_mm[0][1] }.min
+      max = parts.values.map { |p| p.bounds_mm[1][1] }.max
+      assert_near c['depth'], max - min
+      assert_near(kind == 'open' ? 0 : -thickness, min)
+    end
   end
 
   def test_drawer_stock_preserves_outer_size_and_clearances
