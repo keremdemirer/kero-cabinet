@@ -2,7 +2,7 @@
 
 **A parametric cabinet builder for SketchUp.** Enter dimensions and a bay layout to create an editable cabinet component.
 
-Version: **v0.6.1 (early development)**. The original project reports use in SketchUp 2025. Automated tests use a mock SketchUp API; they are not runtime integration tests.
+Version: **v0.6.2 (early development)**. The original project reports use in SketchUp 2025. Automated tests use a mock SketchUp API; they are not runtime integration tests.
 
 ## Features
 
@@ -22,14 +22,14 @@ The plugin does not generate cut lists. Separate part components are intended fo
 
 1. Download the RBZ from the `kero-cabinet-rbz` artifact of a successful GitHub Actions run, or build it locally.
 2. In SketchUp, open **Extensions > Extension Manager > Install Extension**.
-3. Select `Kero_Cabinet_v0.6.1.rbz` and restart SketchUp.
+3. Select `Kero_Cabinet_v0.6.2.rbz` and restart SketchUp.
 4. Choose **Extensions > Kero Cabinet > Create new cabinet...**.
 
 To edit a cabinet, select its component and choose **Kero Cabinet | Edit parameters** from the context menu, or **Edit selected cabinet...** from the extension menu.
 
 ## Updates from GitHub
 
-Install v0.6.1 once using the RBZ. Future releases can be installed from
+Install v0.6.2 once using the RBZ. Future releases can be installed from
 **Extensions > Kero Cabinet > Check for updates...**, without downloading or
 installing another RBZ manually. Save your work and restart SketchUp after an update.
 
@@ -59,7 +59,7 @@ Internal shelves behind inset doors start behind the door back with the configur
 ### Update connection troubleshooting
 
 Internet access in a browser does not prove that SketchUp can reach GitHub.
-From v0.6.1 the updater uses SketchUp's native HTTP transport and reports the
+From v0.6.2 the updater uses SketchUp's native HTTP transport and reports the
 actual failure category. Check application firewall/proxy/VPN settings when
 SketchUp cannot reach `api.github.com`. Certificate checks are never disabled.
 If an older updater cannot download this fix, install the current RBZ once via
@@ -70,8 +70,8 @@ use mocks; a runtime check on the affected SketchUp installation is still needed
 
 In a vertical bay, choose **Type > Stacked sections** to place different contents
 above one another. The default is one bottom drawer and an upper door section,
-with height weights **1:3**. Each bay supports **2-6** sections ordered bottom to
-top. Each section can contain drawers, doors, or open shelves. Use **Up/Down**
+with height weights **1:3**. Each bay supports **2-6** sections displayed top to
+bottom to match the cabinet. Stored section order remains bottom to top. Each section can contain drawers, doors, or open shelves. Use **Up/Down**
 to reorder them and **Add section above** to extend the layout.
 
 Height weights divide the available internal height. Horizontal divider panels
@@ -170,13 +170,13 @@ python3 scripts/update_manifest.py --check
 bash scripts/build.sh
 ```
 
-Output: `dist/Kero_Cabinet_v0.6.1.rbz`.
+Output: `dist/Kero_Cabinet_v0.6.2.rbz`.
 
 CI checks text, Ruby syntax, 27 geometry configurations, and archive integrity on pushes and pull requests. Successful runs upload the installation package.
 
 ## Existing models
 
-From v0.6.1, the saved depth value includes the back panel. Editing and regenerating an older cabinet with the same depth shortens its case by the back thickness. To preserve its previous physical depth, increase the input by that thickness before regenerating.
+From v0.6.2, the saved depth value includes the back panel. Editing and regenerating an older cabinet with the same depth shortens its case by the back thickness. To preserve its previous physical depth, increase the input by that thickness before regenerating.
 
 Stored configuration keys and enum values remain compatible. Existing user-entered cabinet names are preserved; rename them in the editor if desired. Regenerating a cabinet replaces its generated parts with English names. Old unused component definitions or materials already stored in a SketchUp model are not purged.
 

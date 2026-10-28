@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.6.2 - 2026-10-28
+- Display stacked sections top to bottom to match their physical cabinet positions.
+- Move Add section above above the section list, preserving saved geometry order and movement controls.
+
 ## v0.6.1 - 2026-10-28
 - Dispatch updater downloads through SketchUp native asynchronous HTTP on the UI thread, avoiding reliance on embedded Ruby TLS configuration.
 - Retain request objects, time out stalled requests, and ignore late callbacks after completion.

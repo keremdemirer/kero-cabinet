@@ -1,5 +1,5 @@
 # frozen_string_literal: true
-# Kero Cabinet v0.6.1, SketchUp 2020+; all design inputs use millimetres.
+# Kero Cabinet v0.6.2, SketchUp 2020+; all design inputs use millimetres.
 require 'sketchup.rb'
 require 'json'
 require_relative 'updater'
@@ -8,7 +8,7 @@ module KeroCabinet
   extend self
 
   DICT = 'kero_cabinet'.freeze
-  VERSION = '0.6.1'.freeze
+  VERSION = '0.6.2'.freeze
 
   DEFAULT = {
     'name' => 'Parametric Cabinet',
@@ -580,7 +580,7 @@ module KeroCabinet
       </style>
       </head>
       <body>
-      <header><h1>Kero Cabinet</h1><p>Parametric SketchUp cabinet builder - v0.6.1</p></header>
+      <header><h1>Kero Cabinet</h1><p>Parametric SketchUp cabinet builder - v0.6.2</p></header>
       <main>
         <section class="section">
           <h2>Case dimensions</h2>
@@ -714,12 +714,12 @@ module KeroCabinet
         function moveSection(i,j,direction){const items=bays[i].sections;const target=j+direction;if(target>=0&&target<items.length){[items[j],items[target]]=[items[target],items[j]];renderBays();}}
         function renderSections(b,i){
           if(b.kind!=='stack')return '';
-          return '<p class="hint">Sections are ordered bottom to top. Height weights divide the available height; horizontal divider panels are added automatically.</p>'+
+          return '<p class="hint">Sections are displayed top to bottom, matching the cabinet. Height weights divide the available height; horizontal divider panels are added automatically.</p>'+`<button type="button" class="ghost" onclick="addSection(${i})">+ Add section above</button>`+
           b.sections.map((section,j)=>`<div class="bay"><div class="bayhead">Section ${j+1}${j===0?' (bottom)':j===b.sections.length-1?' (top)':''}<span><button type="button" class="ghost remove" onclick="moveSection(${i},${j},-1)" ${j===0?'disabled':''}>Down</button> <button type="button" class="ghost remove" onclick="moveSection(${i},${j},1)" ${j===b.sections.length-1?'disabled':''}>Up</button> <button type="button" class="ghost remove" onclick="removeSection(${i},${j})" ${b.sections.length<=2?'disabled':''}>Remove</button></span></div>
           <div class="grid"><div><label>Section type</label><select onchange="changeSection(${i},${j},'kind',this.value)">${['drawer','door','open'].map(kind=>`<option value="${kind}" ${section.kind===kind?'selected':''}>${{drawer:'Drawers',door:'Doors',open:'Open shelves'}[kind]}</option>`).join('')}</select></div>
           <div><label>Height weight</label><input type="number" required min="0.2" max="10" step="0.1" value="${escapeHtml(section.weight)}" onchange="changeSection(${i},${j},'weight',this.value)"></div>
           ${section.kind==='drawer'?`<div><label>Drawer count</label><input type="number" required min="1" max="8" value="${section.drawers}" onchange="changeSection(${i},${j},'drawers',this.value)"></div>`:section.kind==='door'?`<div><label>Door count</label><input type="number" required min="1" max="2" value="${section.doors}" onchange="changeSection(${i},${j},'doors',this.value)"></div>`:''}
-          ${section.kind!=='drawer'?`<div><label>Shelf count</label><input type="number" required min="0" max="8" value="${section.shelves}" onchange="changeSection(${i},${j},'shelves',this.value)"></div>`:''}</div></div>`).join('')+`<button type="button" class="ghost" onclick="addSection(${i})">+ Add section above</button>`;
+          ${section.kind!=='drawer'?`<div><label>Shelf count</label><input type="number" required min="0" max="8" value="${section.shelves}" onchange="changeSection(${i},${j},'shelves',this.value)"></div>`:''}</div></div>`).reverse().join('');
         }
         function renderBays(){
           document.getElementById('bays').innerHTML = bays.map((b,i)=>{
