@@ -33,6 +33,8 @@ jobs:
         run: ruby test/undermount_test.rb
       - name: Drawer box height tests
         run: ruby test/drawer_height_test.rb
+      - name: Worktop geometry
+        run: ruby test/worktop_test.rb
       - name: Shared stock definitions
         run: ruby test/stock_test.rb
       - name: Live reload tests

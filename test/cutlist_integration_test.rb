@@ -39,6 +39,8 @@ class CutListIntegrationTest < Minitest::Test
     c = KeroCabinet.validate_config(KeroCabinet.clone_defaults)
     entities = MockEntities.new
     KeroCabinet.generate_parts(entities, c, model)
+    KeroCabinet.box(entities, 'Worktop', { name: '30 mm MDF Worktop Sheet', base: [1.0,1.0,30.0], type: 'sheet' },
+      0,0,850,2400,800,30,{})
     entities.instances.each do |part|
       actual = cutlist::CutListPart.new(part, part.definition.name, 'Cabinet', part.material.name, true)
       low, high = part.bounds_mm

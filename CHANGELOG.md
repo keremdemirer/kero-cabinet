@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.11.0 - 2026-10-28
+- Create independent worktops from adjacent same-height cabinet selections, with 30 mm default thickness, separate material naming and four overhang settings.
+- Edit worktop settings without changing the cabinets and reuse separate Worktop Sheet stock definitions.
+- Reject mixed-height/depth, rotated, gapped and overlapping runs.
+- Verify worktop geometry, stock reuse and original CutList measurement/classification.
+
 ## v0.10.0 - 2026-10-28
 - Share owned stock component definitions across scaled part instances and cabinets, with thickness-based Sheet materials and dimensional Timber materials.
 - Preserve per-instance role names and real geometry, and classify sheets using default CutList material words.

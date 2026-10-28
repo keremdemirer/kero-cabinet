@@ -2,7 +2,7 @@
 
 **A parametric cabinet builder for SketchUp.** Enter dimensions and a bay layout to create an editable cabinet component.
 
-Version: **v0.10.0 (early development)**. The original project reports use in SketchUp 2025. Automated tests use a mock SketchUp API; they are not runtime integration tests.
+Version: **v0.11.0 (early development)**. The original project reports use in SketchUp 2025. Automated tests use a mock SketchUp API; they are not runtime integration tests.
 
 ## Features
 
@@ -22,14 +22,14 @@ The plugin does not generate cut lists. It targets **CutList v4.1.12** for the c
 
 1. Download the RBZ from the `kero-cabinet-rbz` artifact of a successful GitHub Actions run, or build it locally.
 2. In SketchUp, open **Extensions > Extension Manager > Install Extension**.
-3. Select `Kero_Cabinet_v0.10.0.rbz` and restart SketchUp.
+3. Select `Kero_Cabinet_v0.11.0.rbz` and restart SketchUp.
 4. Choose **Extensions > Kero Cabinet > Create new cabinet...**.
 
 To edit a cabinet, select its component and choose **Kero Cabinet | Edit parameters** from the context menu, or **Edit selected cabinet...** from the extension menu.
 
 ## Updates from GitHub
 
-Install v0.10.0 once using the RBZ. Future releases can be installed from
+Install v0.11.0 once using the RBZ. Future releases can be installed from
 **Extensions > Kero Cabinet > Check for updates...**, without downloading or
 installing another RBZ manually. The plugin reloads automatically after an update. Apply or cancel any open cabinet
 editor changes before starting: editors close during reload. The model is not
@@ -64,7 +64,7 @@ Internal shelves behind inset doors start behind the door back with the configur
 
 ### First upgrade to live reload
 
-The updater running before v0.10.0 still asks for a restart. After installing this
+The updater running before v0.11.0 still asks for a restart. After installing this
 version using the old updater or Extension Manager, apply/close Kero Cabinet
 editors, then run this once in **Window > Ruby Console** to activate without a
 SketchUp restart:
@@ -82,12 +82,38 @@ mock SketchUp API; real runtime validation on the user's installation is needed.
 ### Update connection troubleshooting
 
 Internet access in a browser does not prove that SketchUp can reach GitHub.
-From v0.10.0 the updater uses SketchUp's native HTTP transport and reports the
+From v0.11.0 the updater uses SketchUp's native HTTP transport and reports the
 actual failure category. Check application firewall/proxy/VPN settings when
 SketchUp cannot reach `api.github.com`. Certificate checks are never disabled.
 If an older updater cannot download this fix, install the current RBZ once via
 Extension Manager and restart SketchUp before checking again. Native HTTP tests
 use mocks; a runtime check on the affected SketchUp installation is still needed.
+
+## Independent worktops
+
+Select one or more adjacent Kero Cabinet components at the same top height and
+choose **Create worktop from selection...**. The command is under Kero Cabinet,
+or directly in Extensions as **Kero Cabinet | Create worktop from selection...**
+for a live-upgraded session without a retained submenu.
+
+The worktop spans the complete selected run, including front projections. Set its
+name, independent material name (default **MDF**), thickness (default **30 mm**),
+and front/rear/left/right overhangs (default zero). It sits on the cabinet tops;
+its thickness is additional to cabinet height. It is a separate scaled component,
+using a stock/material name such as **30 mm MDF Worktop Sheet**, distinct from
+ordinary **30 mm Sheet** stock and recognized by CutList's default Sheet words.
+
+Select the resulting top and choose **Edit selected worktop...** to change these
+settings. Cabinet geometry is unaffected. Existing manually modeled tops are not
+removed or converted. The top stores its original footprint independently; if
+cabinet dimensions/positions change, recreate the top from the new selection.
+
+This first version supports straight runs of adjacent, unrotated, unscaled
+components with matching top heights, depths and front/rear alignment. Different
+heights (such as a lower center section) need separate worktops. Gaps, overlaps,
+rotations and mixed depths are rejected rather than silently bridged. L-shaped
+runs, automatic seams and maximum commercial sheet sizes are not implemented;
+check available stock and divide long runs into suitable selected groups.
 
 ## Shared stock components and CutList v4.1.12
 
@@ -298,18 +324,19 @@ ruby test/undermount_test.rb
 ruby test/drawer_height_test.rb
 ruby test/reload_test.rb
 ruby test/stock_test.rb
+ruby test/worktop_test.rb
 ruby test/updater_test.rb
 python3 scripts/update_manifest.py --check
 bash scripts/build.sh
 ```
 
-Output: `dist/Kero_Cabinet_v0.10.0.rbz`.
+Output: `dist/Kero_Cabinet_v0.11.0.rbz`.
 
 CI checks text, Ruby syntax, 27 geometry configurations, and archive integrity on pushes and pull requests. Successful runs upload the installation package.
 
 ## Existing models
 
-From v0.10.0, regenerating a cabinet replaces per-part definitions with shared
+From v0.11.0, regenerating a cabinet replaces per-part definitions with shared
 stock definitions and applies stock-based material names.
 
 From v0.4.1, the saved depth value includes the back panel. Editing and regenerating an older cabinet with the same depth shortens its case by the back thickness. To preserve its previous physical depth, increase the input by that thickness before regenerating.
@@ -327,9 +354,9 @@ Stored configuration keys and enum values remain compatible. Existing user-enter
 
 No license has been selected. No new license is added by this translation.
 
-From v0.10.0, overlay front thickness is also included in the saved depth value. Regenerating an older overlay cabinet with the same input shortens the case by the front thickness. Increase the input by the front thickness only if you want to preserve the old physical depth.
+From v0.11.0, overlay front thickness is also included in the saved depth value. Regenerating an older overlay cabinet with the same input shortens the case by the front thickness. Increase the input by the front thickness only if you want to preserve the old physical depth.
 
-### Drawer depth fitting (v0.10.0)
+### Drawer depth fitting (v0.11.0)
 
 Undermount Auto selects the longest supported nominal length fitting the available
 space, retaining required rear allowance. Supported lengths currently stop at

@@ -1,5 +1,5 @@
 # frozen_string_literal: true
-# Kero Cabinet v0.10.0, SketchUp 2020+; all design inputs use millimetres.
+# Kero Cabinet v0.11.0, SketchUp 2020+; all design inputs use millimetres.
 require 'sketchup.rb'
 require 'json'
 require_relative 'updater'
@@ -9,7 +9,7 @@ module KeroCabinet
 
   %i[DICT VERSION DEFAULT DRAWER_SLIDES].each { |name| remove_const(name) if const_defined?(name, false) }
   DICT = 'kero_cabinet'.freeze
-  VERSION = '0.10.0'.freeze
+  VERSION = '0.11.0'.freeze
 
   DEFAULT = {
     'name' => 'Parametric Cabinet',
@@ -668,6 +668,108 @@ module KeroCabinet
     instance
   end
 
+  # Independent worktops span adjacent, equally deep, translation-only cabinets.
+  def worktop_footprint(cabinets)
+    raise ArgumentError, 'Select one or more Kero Cabinet components first.' if cabinets.empty?
+    bounds = cabinets.map do |cabinet|
+      matrix = cabinet.transformation.to_a
+      expected = [1,0,0,0, 0,1,0,0, 0,0,1,0]
+      unless expected.each_with_index.all? { |value, index| (matrix[index] - value).abs < 0.000001 }
+        raise ArgumentError, 'Worktop selection currently supports unrotated, unscaled cabinets only.'
+      end
+      box = cabinet.bounds
+      [box.min.to_a.map { |v| v.to_f*25.4 }, box.max.to_a.map { |v| v.to_f*25.4 }]
+    end.sort_by { |low, _high| low[0] }
+    first_low, first_high = bounds.first
+    bounds.each do |low, high|
+      unless (high[2]-first_high[2]).abs <= 0.5 && (low[1]-first_low[1]).abs <= 0.5 && (high[1]-first_high[1]).abs <= 0.5
+        raise ArgumentError, 'Select cabinets with the same top height, depth and front/rear alignment. Create separate worktops for different heights.'
+      end
+    end
+    bounds.each_cons(2) do |(_left_low, left_high), (right_low, _right_high)|
+      unless (right_low[0]-left_high[0]).abs <= 0.5
+        raise ArgumentError, 'Selected cabinets must be adjacent without gaps or overlaps. Select each continuous run separately.'
+      end
+    end
+    { 'x' => first_low[0], 'y' => first_low[1], 'z' => first_high[2],
+      'width' => bounds.last[1][0] - first_low[0], 'depth' => first_high[1] - first_low[1] }
+  end
+
+  def validate_worktop(source)
+    raise ArgumentError, 'Invalid worktop settings.' unless source.is_a?(Hash)
+    c = source.dup
+    c['name'] = c['name'].to_s.strip[0,80]
+    c['name'] = 'Worktop' if c['name'].empty?
+    c['material'] = c['material'].to_s.strip[0,60]
+    c['material'] = 'MDF' if c['material'].empty?
+    if c['material'].match?(/part|hardware/i)
+      raise ArgumentError, 'Material name contains a CutList hardware keyword (part/hardware). Use a name such as MDF, Plywood or Chipboard.'
+    end
+    { 'thickness' => [6,100], 'front_overhang' => [0,300], 'rear_overhang' => [0,300],
+      'left_overhang' => [0,300], 'right_overhang' => [0,300],
+      'width' => [100,10000], 'depth' => [100,2000],
+      'x' => [-1000000,1000000], 'y' => [-1000000,1000000], 'z' => [-1000000,1000000]
+    }.each { |key, (low,high)| number_between!(c, key, low, high) }
+    c
+  end
+
+  def worktop_geometry(c)
+    { origin: [c['x']-c['left_overhang'], c['y']-c['front_overhang'], c['z']],
+      size: [c['width']+c['left_overhang']+c['right_overhang'], c['depth']+c['front_overhang']+c['rear_overhang'], c['thickness']],
+      stock: { name: "#{stock_number(c['thickness'])} mm #{c['material']} Worktop Sheet", base: [1.0,1.0,c['thickness']], type: 'sheet' } }
+  end
+
+  def show_worktop_editor(instance = nil)
+    model = Sketchup.active_model
+    if instance
+      config = validate_worktop(JSON.parse(instance.get_attribute(DICT, 'worktop_config')))
+    else
+      cabinets = model.selection.to_a
+      unless cabinets.all? { |item| item.is_a?(Sketchup::ComponentInstance) && item.get_attribute(DICT, 'config').is_a?(String) }
+        raise ArgumentError, 'Select only the adjacent Kero Cabinet components that need this worktop.'
+      end
+      config = worktop_footprint(cabinets).merge('name' => 'Worktop', 'material' => 'MDF',
+        'thickness' => 30, 'front_overhang' => 0, 'rear_overhang' => 0, 'left_overhang' => 0, 'right_overhang' => 0)
+    end
+    keys = %w[name material thickness front_overhang rear_overhang left_overhang right_overhang]
+    labels = ['Worktop name', 'Material name', 'Thickness (mm)', 'Front overhang (mm)', 'Rear overhang (mm)', 'Left overhang (mm)', 'Right overhang (mm)']
+    values = UI.inputbox(labels, keys.map { |key| config[key] }, "Kero Cabinet | Worktop - #{stock_number(config['width'])} x #{stock_number(config['depth'])} mm")
+    return unless values
+    keys.zip(values).each { |key,value| config[key] = value }
+    build_worktop(validate_worktop(config), instance)
+  rescue StandardError => error
+    UI.messagebox("Could not create or edit the worktop:\n#{error.message}")
+  end
+
+  def build_worktop(config, previous = nil)
+    model = Sketchup.active_model
+    model.start_operation(previous ? 'Edit Kero Cabinet worktop' : 'Create Kero Cabinet worktop', true)
+    begin
+      raise ArgumentError, 'The selected worktop no longer exists.' if previous && !previous.valid?
+      geometry = worktop_geometry(config)
+      part = box(model.active_entities, config['name'], geometry[:stock], *geometry[:origin], *geometry[:size], {})
+      part.set_attribute(DICT, 'worktop_config', JSON.generate(config))
+      obsolete = previous ? [previous.definition] : []
+      previous.erase! if previous
+      remove_unused_part_definitions(model, obsolete)
+      model.selection.clear
+      model.selection.add(part)
+      model.commit_operation
+      part
+    rescue StandardError
+      model.abort_operation
+      raise
+    end
+  end
+
+  def edit_selected_worktop
+    selected = Sketchup.active_model.selection.to_a
+    unless selected.length == 1 && selected.first.is_a?(Sketchup::ComponentInstance) && selected.first.get_attribute(DICT, 'worktop_config').is_a?(String)
+      return UI.messagebox('Select one Kero Cabinet worktop component first.')
+    end
+    show_worktop_editor(selected.first)
+  end
+
   def selected_cabinet
     selection = Sketchup.active_model.selection
     return nil unless selection.length == 1
@@ -722,7 +824,7 @@ module KeroCabinet
       </style>
       </head>
       <body>
-      <header><h1>Kero Cabinet</h1><p>Parametric SketchUp cabinet builder - v0.10.0</p></header>
+      <header><h1>Kero Cabinet</h1><p>Parametric SketchUp cabinet builder - v0.11.0</p></header>
       <main>
         <section class="section">
           <h2>Case dimensions</h2>
@@ -959,6 +1061,13 @@ module KeroCabinet
     reload_menu = @menu || UI.menu('Plugins')
     reload_menu.add_item(@menu ? 'Reload plugin now...' : 'Kero Cabinet | Reload plugin now...') { Updater.reload_from_menu }
     @reload_command_registered = true
+  end
+
+  if defined?(UI) && UI.respond_to?(:menu) && !@worktop_commands_registered
+    worktop_menu = @menu || UI.menu('Plugins')
+    worktop_menu.add_item(@menu ? 'Create worktop from selection...' : 'Kero Cabinet | Create worktop from selection...') { show_worktop_editor }
+    worktop_menu.add_item(@menu ? 'Edit selected worktop...' : 'Kero Cabinet | Edit selected worktop...') { edit_selected_worktop }
+    @worktop_commands_registered = true
   end
 
 end
