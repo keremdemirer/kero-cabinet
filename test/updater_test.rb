@@ -109,3 +109,118 @@ class UpdaterTest < Minitest::Test
     end
   end
 end
+
+# A deterministic stand-in for SketchUp's asynchronous HTTP and timer APIs.
+module Sketchup
+  module Http
+    class Request
+      attr_accessor :headers
+      attr_reader :url, :cancelled
+      class << self
+        attr_accessor :response, :pending, :start_result
+      end
+      def initialize(url)
+        @url = url
+      end
+      def start(&callback)
+        self.class.pending = callback
+        callback.call(self, self.class.response) if self.class.response
+        self.class.start_result != false
+      end
+      def cancel
+        @cancelled = true
+      end
+    end
+  end
+end
+module UI
+  class << self
+    attr_accessor :timers
+    def start_timer(_delay, _repeat, &block)
+      self.timers ||= {}
+      id = (timers.keys.max || 0) + 1
+      timers[id] = block
+      id
+    end
+    def stop_timer(id)
+      timers.delete(id)
+    end
+  end
+end
+
+class NativeUpdaterTest < Minitest::Test
+  U = KeroCabinet::Updater
+  Request = Sketchup::Http::Request
+  Response = Struct.new(:status_code, :body)
+
+  def setup
+    UI.timers = {}
+    Request.response = nil
+    Request.start_result = true
+    U.instance_variable_set(:@network_queue, nil)
+    U.instance_variable_set(:@busy, false)
+  end
+
+  def test_native_success_retains_and_cleans_request
+    Request.response = Response.new(200, '{"ok":true}')
+    queue = Queue.new
+    U.native_request('git/ref/heads/main', queue)
+    assert_equal [:ok, { 'ok' => true }], queue.pop
+    assert_empty U.instance_variable_get(:@requests)
+    assert_empty UI.timers
+  end
+
+  def test_native_timeout_completes_once_and_ignores_late_callback
+    queue = Queue.new
+    U.native_request('git/ref/heads/main', queue)
+    assert_equal 1, U.instance_variable_get(:@requests).length
+    request = U.instance_variable_get(:@requests).first
+    UI.timers.values.first.call
+    status, error = queue.pop
+    assert_equal :error, status
+    assert_includes error.message, '40 seconds'
+    assert request.cancelled
+    Request.pending.call(request, Response.new(200, '{}'))
+    assert queue.empty?
+    assert_empty U.instance_variable_get(:@requests)
+    assert_empty UI.timers
+  end
+
+  def test_start_failure_and_invalid_response_are_reported
+    Request.start_result = false
+    queue = Queue.new
+    U.native_request('git/ref/heads/main', queue)
+    assert_includes queue.pop[1].message, 'could not start'
+    Request.start_result = true
+    Request.response = Response.new(200, '<html>proxy login</html>')
+    U.native_request('git/ref/heads/main', queue)
+    assert_includes queue.pop[1].message, 'invalid response'
+    assert_empty UI.timers
+  end
+
+  def test_background_dispatches_native_requests_and_releases_busy_state
+    Request.response = Response.new(200, '{"native":true}')
+    result = nil
+    U.background(lambda { U.api('git/ref/heads/main') }) { |status, value| result = [status, value] }
+    deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 2
+    until result || Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+      UI.timers.values.dup.each(&:call)
+      Thread.pass
+    end
+    assert_equal [:ok, { 'native' => true }], result
+    refute U.instance_variable_get(:@busy)
+    assert_nil U.instance_variable_get(:@network_queue)
+  end
+
+  def test_connection_errors_preserve_real_cause
+    ssl = U.error_message(OpenSSL::SSL::SSLError.new('certificate verify failed'))
+    assert_includes ssl, 'HTTPS'
+    assert_includes ssl, 'certificate verify failed'
+    assert_includes U.error_message(SocketError.new('lookup failed')), 'DNS'
+    assert_includes U.error_message(Net::ReadTimeout.new), 'timed out'
+    error = assert_raises(U::UpdateError) { U.parse_response(429, '{}') }
+    assert_includes error.message, 'request limit'
+    error = assert_raises(U::UpdateError) { U.parse_response(0, '') }
+    assert_includes error.message, 'SketchUp'
+  end
+end

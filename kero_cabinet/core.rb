@@ -1,5 +1,5 @@
 # frozen_string_literal: true
-# Kero Cabinet v0.6.0, SketchUp 2020+; all design inputs use millimetres.
+# Kero Cabinet v0.6.1, SketchUp 2020+; all design inputs use millimetres.
 require 'sketchup.rb'
 require 'json'
 require_relative 'updater'
@@ -8,7 +8,7 @@ module KeroCabinet
   extend self
 
   DICT = 'kero_cabinet'.freeze
-  VERSION = '0.6.0'.freeze
+  VERSION = '0.6.1'.freeze
 
   DEFAULT = {
     'name' => 'Parametric Cabinet',
@@ -580,7 +580,7 @@ module KeroCabinet
       </style>
       </head>
       <body>
-      <header><h1>Kero Cabinet</h1><p>Parametric SketchUp cabinet builder - v0.6.0</p></header>
+      <header><h1>Kero Cabinet</h1><p>Parametric SketchUp cabinet builder - v0.6.1</p></header>
       <main>
         <section class="section">
           <h2>Case dimensions</h2>

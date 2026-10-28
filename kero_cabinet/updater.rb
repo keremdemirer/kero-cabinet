@@ -17,6 +17,17 @@ module KeroCabinet
     class UpdateError < StandardError; end
 
     def api(path)
+      if @network_queue && defined?(Sketchup::Http::Request)
+        result = Queue.new
+        @network_queue << [path, result]
+        status, value = result.pop
+        raise value if status == :error
+        return value
+      end
+      ruby_api(path)
+    end
+
+    def ruby_api(path)
       uri = URI("https://api.github.com/repos/#{REPOSITORY}/#{path}")
       request = Net::HTTP::Get.new(uri)
       request['Accept'] = 'application/vnd.github+json'
@@ -27,16 +38,83 @@ module KeroCabinet
       http.open_timeout = 10
       http.read_timeout = 20
       response = http.request(request)
-      case response.code.to_i
+      parse_response(response.code.to_i, response.body)
+    end
+
+    def parse_response(code, body)
+      case code
       when 200
-        raise UpdateError, 'GitHub response is too large.' if response.body.bytesize > 2_000_000
-        JSON.parse(response.body)
+        raise UpdateError, 'GitHub response is too large.' if body.to_s.bytesize > 2_000_000
+        JSON.parse(body)
       when 401, 404
         raise UpdateError, 'Repository access failed. Check that keremdemirer/kero-cabinet is public and available.'
       when 403, 429
         raise UpdateError, 'GitHub access was denied or the request limit was reached. Try again later.'
+      when 0
+        raise UpdateError, 'SketchUp could not reach api.github.com. Check SketchUp network access, firewall, proxy, or VPN settings.'
       else
-        raise UpdateError, "GitHub request failed (HTTP #{response.code})."
+        raise UpdateError, "GitHub request failed (HTTP #{code})."
+      end
+    rescue JSON::ParserError
+      raise UpdateError, 'GitHub returned an invalid response. A proxy or sign-in page may be intercepting the request.'
+    end
+
+    # Called only by the main-thread UI timer. Native HTTP uses SketchUp's
+    # network stack instead of relying on the embedded Ruby OpenSSL trust store.
+    def native_request(path, result)
+      request = Sketchup::Http::Request.new("https://api.github.com/repos/#{REPOSITORY}/#{path}")
+      request.headers = { 'Accept' => 'application/vnd.github+json', 'User-Agent' => 'Kero-Cabinet-Updater' }
+      @requests ||= []
+      @requests << request
+      completed = false
+      timeout = nil
+      finish = lambda do |status, value|
+        next if completed
+        completed = true
+        UI.stop_timer(timeout) if timeout
+        @requests.delete(request)
+        result << [status, value]
+      end
+      timeout = UI.start_timer(40, true) do
+        UI.stop_timer(timeout)
+        unless completed
+          begin
+            request.cancel
+          ensure
+            finish.call(:error, UpdateError.new('The GitHub request timed out after 40 seconds. Check SketchUp network access and try again.'))
+          end
+        end
+      end
+      started = request.start do |_finished_request, response|
+        next if completed
+        begin
+          value = parse_response(response.status_code.to_i, response.body)
+          finish.call(:ok, value)
+        rescue StandardError => error
+          finish.call(:error, error)
+        end
+      end
+      finish.call(:error, UpdateError.new('SketchUp could not start the GitHub request. Restart SketchUp and try again.')) unless started
+    rescue StandardError => error
+      if defined?(finish) && finish
+        finish.call(:error, error)
+      else
+        result << [:error, error]
+      end
+    end
+
+    def error_message(error)
+      return error.message if error.is_a?(UpdateError)
+      detail = "#{error.class}: #{error.message.to_s[0, 240]}"
+      case error
+      when OpenSSL::SSL::SSLError
+        "SketchUp could not verify GitHub's HTTPS connection. Check the system date and certificate/proxy settings.\n#{detail}"
+      when SocketError
+        "SketchUp could not resolve api.github.com. Check DNS, proxy, or VPN settings.\n#{detail}"
+      when Timeout::Error
+        "The GitHub request timed out. Try again or check SketchUp network access.\n#{detail}"
+      else
+        "The update request failed.\n#{detail}"
       end
     end
 
@@ -127,18 +205,24 @@ module KeroCabinet
       return UI.messagebox('An update operation is already running.') if @busy
       @busy = true
       queue = Queue.new
+      @network_queue = Queue.new
       Thread.new do
         begin
           queue << [:ok, work.call]
         rescue StandardError => error
-          message = error.is_a?(UpdateError) ? error.message : 'The update request failed. Check your connection and try again.'
+          message = error_message(error)
           queue << [:error, message]
         end
       end
       timer = UI.start_timer(0.2, true) do
+        unless @network_queue.empty?
+          path, response_queue = @network_queue.pop
+          native_request(path, response_queue)
+        end
         next if queue.empty?
         UI.stop_timer(timer)
         @busy = false
+        @network_queue = nil
         status, result = queue.pop
         complete.call(status, result)
       end
@@ -170,8 +254,8 @@ module KeroCabinet
           end
         end
       end
-    rescue StandardError
-      UI.messagebox('Could not check for updates. Try again later.') unless silent
+    rescue StandardError => error
+      UI.messagebox(error_message(error)) unless silent
     end
 
     def show_settings

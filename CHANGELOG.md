@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.6.1 - 2026-10-28
+- Dispatch updater downloads through SketchUp native asynchronous HTTP on the UI thread, avoiding reliance on embedded Ruby TLS configuration.
+- Retain request objects, time out stalled requests, and ignore late callbacks after completion.
+- Report actual SSL, DNS, timeout, HTTP, and invalid-response errors instead of one generic connection message.
+- Add mocked native transport and worker/timer integration tests.
+
 ## v0.6.0 - 2026-10-28
 - Add 2-6 bottom-to-top horizontal sections inside each vertical bay, mixing drawers, doors, and shelves with height weights and reorder controls.
 - Generate horizontal divider panels and optional face-frame rails, with section-specific drawer and shelf bounds.
