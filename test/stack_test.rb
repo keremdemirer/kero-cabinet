@@ -51,6 +51,28 @@ class StackTest < Minitest::Test
     end
   end
 
+  def test_overlay_bottom_drawer_aligns_with_equal_front_grid
+    [true, false].product(%w[full rails], %w[between full], [1, 2, 6]).each do |frame, back, bottom, gap|
+      source = KeroCabinet.clone_defaults.merge('style' => 'overlay', 'frame' => frame,
+        'back_construction' => back, 'bottom_construction' => bottom, 'gap' => gap,
+        'bays' => [item('stack').merge('sections' => [item('drawer', 1), item('door', 3)]),
+          item('drawer').merge('drawers' => 4)])
+      c = KeroCabinet.validate_config(source)
+      model = MockModel.new
+      Sketchup.active_model = model
+      entities = MockEntities.new
+      KeroCabinet.generate_parts(entities, c, model)
+      parts = entities.instances.to_h { |p| [p.name, p] }
+      left = parts.fetch('Bay 1 section 1 drawer front 1').bounds_mm
+      right = parts.fetch('Bay 2 drawer front 1').bounds_mm
+      assert_in_delta right[0][2], left[0][2], 0.001
+      assert_in_delta right[1][2], left[1][2], 0.001
+      divider = parts.fetch('Bay 1 horizontal divider 1').bounds_mm
+      next_front = parts.fetch('Bay 2 drawer front 2').bounds_mm
+      assert_in_delta (divider[0][2]+divider[1][2])/2, (right[1][2]+next_front[0][2])/2, 0.001
+    end
+  end
+
   def test_three_sections_reordering_and_no_duplicate_names
     _, parts = build([item('open'), item('door'), item('drawer')], 'height' => 1400)
     assert parts.any? { |p| p.name == 'Bay 1 section 1 open shelf 1' }

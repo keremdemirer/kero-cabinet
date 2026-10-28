@@ -1,5 +1,5 @@
 # frozen_string_literal: true
-# Kero Cabinet v0.8.3, SketchUp 2020+; all design inputs use millimetres.
+# Kero Cabinet v0.8.4, SketchUp 2020+; all design inputs use millimetres.
 require 'sketchup.rb'
 require 'json'
 require_relative 'updater'
@@ -8,7 +8,7 @@ module KeroCabinet
   extend self
 
   DICT = 'kero_cabinet'.freeze
-  VERSION = '0.8.3'.freeze
+  VERSION = '0.8.4'.freeze
 
   DEFAULT = {
     'name' => 'Parametric Cabinet',
@@ -433,6 +433,15 @@ module KeroCabinet
         section_bounds << section_bounds.last + (h - t - toe - t) * section['weight'] / total_weight
       end
       section_bounds[-1] = h - t
+      if c['style'] == 'overlay' && sections.length > 1
+        # Use the same gap-centered front grid as a uniform drawer bank.
+        # A bottom weight of 1/4 then matches drawer 1 of a four-drawer bay.
+        cumulative = 0.0
+        sections[0...-1].each_with_index do |section, index|
+          cumulative += section['weight']
+          section_bounds[index+1] = front_bottom + (front_height + g) * cumulative / total_weight - g/2
+        end
+      end
       outer_front_bottom, outer_front_top = front_bottom, front_top
       sections.each_with_index do |section, section_index|
         section_name = sections.length == 1 ? "Bay #{i+1}" : "Bay #{i+1} section #{section_index+1}"
@@ -674,7 +683,7 @@ module KeroCabinet
       </style>
       </head>
       <body>
-      <header><h1>Kero Cabinet</h1><p>Parametric SketchUp cabinet builder - v0.8.3</p></header>
+      <header><h1>Kero Cabinet</h1><p>Parametric SketchUp cabinet builder - v0.8.4</p></header>
       <main>
         <section class="section">
           <h2>Case dimensions</h2>

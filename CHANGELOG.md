@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.8.4 - 2026-10-28
+- Use a shared gap-centered front grid for overlay stacked section boundaries and uniform drawer fronts.
+- Align a 1:3 bottom drawer/upper door layout with the bottom of a four-drawer bank.
+- Preserve inset divider allowances and test overlay alignment across frame, back, bottom and gap settings.
+
 ## v0.8.3 - 2026-10-28
 - Clip each drawer box to its own front interval and section cavity before applying hardware clearances.
 - Prevent overlay boxes from shifting into adjacent drawers when Fit available height is selected.
