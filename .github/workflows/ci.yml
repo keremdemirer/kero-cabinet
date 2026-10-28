@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test-and-package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+      - name: English source regression guard
+        run: python3 scripts/check_english.py
+      - name: Ruby syntax
+        run: |
+          ruby -c kero_cabinet.rb
+          ruby -c kero_cabinet/core.rb
+          ruby -c test/geometry_test.rb
+      - name: Geometry tests
+        run: ruby test/geometry_test.rb
+      - name: Package SketchUp RBZ
+        run: bash scripts/build.sh
+      - name: Upload installation package
+        uses: actions/upload-artifact@v4
+        with:
+          name: kero-cabinet-rbz
+          path: dist/*.rbz
+          if-no-files-found: error

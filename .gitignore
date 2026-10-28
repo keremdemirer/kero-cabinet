@@ -1,0 +1,9 @@
+.DS_Store
+*.log
+*.swp
+*.swo
+.idea/
+.vscode/
+/dist/
+/.bundle/
+/vendor/bundle/
