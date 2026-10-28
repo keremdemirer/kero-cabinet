@@ -1,5 +1,5 @@
 # frozen_string_literal: true
-# Kero Cabinet v0.16.0, SketchUp 2020+; all design inputs use millimetres.
+# Kero Cabinet v0.16.1, SketchUp 2020+; all design inputs use millimetres.
 require 'sketchup.rb'
 require 'json'
 require_relative 'updater'
@@ -9,7 +9,7 @@ module KeroCabinet
 
   %i[DICT VERSION DEFAULT DRAWER_SLIDES].each { |name| remove_const(name) if const_defined?(name, false) }
   DICT = 'kero_cabinet'.freeze
-  VERSION = '0.16.0'.freeze
+  VERSION = '0.16.1'.freeze
 
   DEFAULT = {
     'name' => 'Parametric Cabinet',
@@ -790,11 +790,13 @@ module KeroCabinet
           dt = c['drawer_thickness']
           bottom_t = c['drawer_bottom']
           side_clearance = undermount ? 21.0 - dt : profile[:side]
-          runner_left = undermount && face_frame ? opening_left : cavity_left
-          runner_width = undermount && face_frame ? opening_right - opening_left : cavity_width
+          runner_left = face_frame ? [opening_left,cavity_left].max : cavity_left
+          runner_width = face_frame ? [opening_right,cavity_right].min - runner_left : cavity_width
           dbx = runner_left + side_clearance
           dbw = runner_width - 2*side_clearance
-          dby = undermount ? [fd + 3, front_y + ft + 3].max : [fd, front_y + ft + [g, 3.2].max].max
+          # The applied front fastens directly to the box front. Runner clearance
+          # belongs at the sides/rear, not between these mating surfaces.
+          dby = front_y + ft
           available_depth = rear_inside - dby
           dbd = undermount ? tandem_length(available_depth, c['undermount_length']) : available_depth - c['drawer_rear_gap']
           rear_allowance = undermount ? tandem_rear_allowance(dbd) : c['drawer_rear_gap']
@@ -808,8 +810,12 @@ module KeroCabinet
           # Clip each box to its own front interval before applying clearance.
           # Overlay fronts extend beyond the case, so moving an already-sized
           # box inward can otherwise push it into the next drawer.
-          box_lower = [z_front, cavity_bottom].max + lower_clearance
-          box_upper = [z_front + cell, cavity_top].min - upper_clearance
+          # Boxes must pass through the clear frame opening when pulled forward,
+          # including the bottom/top and mixed-section horizontal frame rails.
+          box_cavity_bottom = face_frame ? [cavity_bottom, section_index.zero? ? door_bottom : lower+fw/2].max : cavity_bottom
+          box_cavity_top = face_frame ? [cavity_top, section_index==sections.length-1 ? door_top : upper-fw/2].min : cavity_top
+          box_lower = [z_front, box_cavity_bottom].max + lower_clearance
+          box_upper = [z_front + cell, box_cavity_top].min - upper_clearance
           dbh = box_upper - box_lower
           if c['drawer_height_mode'] == 'limit'
             if c['drawer_height_limit'] < required_box
@@ -1217,7 +1223,7 @@ module KeroCabinet
       </style>
       </head>
       <body>
-      <header class="editor-header"><div><h1>Kero Cabinet</h1><p>Design your cabinet. Fine-tune only what you need.</p></div><span class="version-tag">v0.16.0 &middot; mm</span></header>
+      <header class="editor-header"><div><h1>Kero Cabinet</h1><p>Design your cabinet. Fine-tune only what you need.</p></div><span class="version-tag">v0.16.1 &middot; mm</span></header>
       <p id="linked-notice" class="linked-notice" hidden></p>
       <nav class="editor-tabs" role="tablist" aria-label="Cabinet settings">
         <button id="tab-size" type="button" role="tab" data-tab="size" aria-controls="panel-size" aria-selected="true" onclick="showTab('size')">Size &amp; fronts</button>

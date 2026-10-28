@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.16.1 - 2026-10-29
+- Seat every drawer box directly against the rear face of its applied drawer front.
+- Remove artificial front gaps and face-frame depth setbacks for side-mount and undermount drawers, including inset and overlay layouts.
+- Size both runner families from the clear face-frame opening so forward boxes clear the stiles and horizontal frame rails.
+- Recalculate drawer depths and organizers while preserving rear hardware allowances and nominal undermount lengths.
+- Verify mating faces, frame clearance, stacked drawers and organizer bounds across frame/front/hardware combinations.
+
 ## v0.16.0 - 2026-10-29
 - Add independent per-drawer None, Panel dividers and Gridfinity organizers, including stacked sections and linked cabinets.
 - Generate removable sheet dividers with weighted compartments, independent stock/height and complementary half-lap grid profiles.

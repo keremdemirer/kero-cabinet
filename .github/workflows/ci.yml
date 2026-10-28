@@ -31,6 +31,8 @@ jobs:
         run: ruby test/shallow_drawer_test.rb
       - name: Undermount geometry tests
         run: ruby test/undermount_test.rb
+      - name: Drawer front attachment
+        run: ruby test/drawer_front_test.rb
       - name: Drawer box height tests
         run: ruby test/drawer_height_test.rb
       - name: Linked cabinet copies

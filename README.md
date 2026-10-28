@@ -2,7 +2,7 @@
 
 **A parametric cabinet builder for SketchUp.** Enter dimensions and a bay layout to create an editable cabinet component.
 
-Version: **v0.16.0 (early development)**. The original project reports use in SketchUp 2025. Automated tests use a mock SketchUp API; they are not runtime integration tests.
+Version: **v0.16.1 (early development)**. The original project reports use in SketchUp 2025. Automated tests use a mock SketchUp API; they are not runtime integration tests.
 
 ## Features
 
@@ -22,14 +22,14 @@ The plugin does not generate cut lists. It targets **CutList v4.1.12** for the c
 
 1. Download the RBZ from the `kero-cabinet-rbz` artifact of a successful GitHub Actions run, or build it locally.
 2. In SketchUp, open **Extensions > Extension Manager > Install Extension**.
-3. Select `Kero_Cabinet_v0.16.0.rbz` and restart SketchUp.
+3. Select `Kero_Cabinet_v0.16.1.rbz` and restart SketchUp.
 4. Choose **Extensions > Kero Cabinet > Create new cabinet...**.
 
 To edit a cabinet, select its component and choose **Kero Cabinet | Edit parameters** from the context menu, or **Edit selected cabinet...** from the extension menu.
 
 ## Updates from GitHub
 
-Install v0.16.0 once using the RBZ. Future releases can be installed from
+Install v0.16.1 once using the RBZ. Future releases can be installed from
 **Extensions > Kero Cabinet > Check for updates...**, without downloading or
 installing another RBZ manually. The plugin reloads automatically after an update. Apply or cancel any open cabinet
 editor changes before starting: editors close during reload. The model is not
@@ -455,6 +455,7 @@ ruby test/stack_test.rb
 ruby test/shallow_drawer_test.rb
 ruby test/undermount_test.rb
 ruby test/drawer_height_test.rb
+ruby test/drawer_front_test.rb
 ruby test/reload_test.rb
 ruby test/stock_test.rb
 ruby test/worktop_test.rb
@@ -467,7 +468,7 @@ python3 scripts/update_manifest.py --check
 bash scripts/build.sh
 ```
 
-Output: `dist/Kero_Cabinet_v0.16.0.rbz`.
+Output: `dist/Kero_Cabinet_v0.16.1.rbz`.
 
 CI checks text, Ruby syntax, 27 geometry configurations, and archive integrity on pushes and pull requests. Successful runs upload the installation package.
 
@@ -500,8 +501,12 @@ space, retaining required rear allowance. Supported lengths currently stop at
 533 mm; a deeper cabinet can therefore retain unused space. Select Auto on older
 cabinets whose saved length is fixed at 457 mm or another manual value.
 Side-mount boxes use available depth minus the adjustable Side-mount rear
-clearance (3-50 mm, default 10). Front setback now reserves the actual front and
-mounting clearance rather than an unconditional extra 18 mm. Exact commercial
+clearance (3-50 mm, default 10). The drawer box starts directly against the back
+of its applied front in both inset and overlay configurations. Face-frame boxes
+use the narrower of the frame and case openings for both runner families, preventing frame collisions
+when the box reaches forward. Existing face-frame side-mount boxes may become
+narrower when regenerated; boxes also clear horizontal frame rails vertically.
+Organizers are recalculated from the new interior. Exact commercial
 slide lengths, brackets and mounting details still need product-specific review.
 
 Overlay stacked sections use the same gap-centered front grid as uniform drawer banks. With matching cabinet height, toe height, and gap, a bottom section weighted 1 of a total 4 aligns with the bottom front of four equal drawers. Inset sections retain divider/face-frame allowances and do not guarantee the same front-edge alignment.

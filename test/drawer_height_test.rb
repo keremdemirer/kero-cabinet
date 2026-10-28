@@ -27,7 +27,7 @@ class DrawerHeightTest < Minitest::Test
       side = fitted.fetch('Bay 1 drawer 1 left side')
       assert_operator height(side), :>, 125
       front_low, front_high = front.bounds_mm
-      expected = [front_high[2], c['height'] - c['panel']].min - [front_low[2], c['toe'] + c['panel']].max - KeroCabinet.drawer_vertical_allowance(c)
+      expected = [front_high[2], c['height'] - (frame ? c['frame_width'] : c['panel'])].min - [front_low[2], c['toe'] + (frame ? c['frame_width'] : c['panel'])].max - KeroCabinet.drawer_vertical_allowance(c)
       assert_in_delta expected, height(side), 0.001
       assert_in_delta 125, height(capped.fetch('Bay 1 drawer 1 left side')), 0.001
       assert_equal front.bounds_mm, capped.fetch('Bay 1 drawer front 1').bounds_mm
