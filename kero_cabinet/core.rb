@@ -1,5 +1,5 @@
 # frozen_string_literal: true
-# Kero Cabinet v0.4.1, SketchUp 2020+; all design inputs use millimetres.
+# Kero Cabinet v0.4.2, SketchUp 2020+; all design inputs use millimetres.
 require 'sketchup.rb'
 require 'json'
 require_relative 'updater'
@@ -8,7 +8,7 @@ module KeroCabinet
   extend self
 
   DICT = 'kero_cabinet'.freeze
-  VERSION = '0.4.1'.freeze
+  VERSION = '0.4.2'.freeze
 
   DEFAULT = {
     'name' => 'Parametric Cabinet',
@@ -232,7 +232,7 @@ module KeroCabinet
     add.call('Back panel', 'Back panel', 0, d, toe, w, bt, h - toe)
     if toe > 0
       recess = [65.0, (d-fd)/3.0].min
-      add.call('Toe kick front', 'Case', t, fd + recess, 0, w - 2*t, t, toe)
+      add.call('Toe kick front', 'Case', 0, fd + recess, 0, w, t, toe)
     end
 
     bay_total = c['bays'].sum { |b| b['weight'] }
@@ -475,7 +475,7 @@ module KeroCabinet
       </style>
       </head>
       <body>
-      <header><h1>Kero Cabinet</h1><p>Parametric SketchUp cabinet builder - v0.4.1</p></header>
+      <header><h1>Kero Cabinet</h1><p>Parametric SketchUp cabinet builder - v0.4.2</p></header>
       <main>
         <section class="section">
           <h2>Case dimensions</h2>
@@ -487,19 +487,21 @@ module KeroCabinet
             <div><label for="panel">Case panel (mm)</label><input id="panel" type="number" step="1"></div>
             <div><label for="back">Back panel (mm)</label><input id="back" type="number" step="1"></div>
             <div><label for="front">Door/front thickness (mm)</label><input id="front" type="number" step="1"></div>
-            <div><label for="toe">Toe kick height (mm)</label><input id="toe" type="number" step="1"></div>
             <div><label for="gap">Front gap (mm)</label><input id="gap" type="number" step="0.5"></div>
           </div>
           <p class="hint">Depth includes the external back panel. The case is shortened by the back thickness; overlay fronts project forward separately. Enter the total height including the toe kick.</p>
         </section>
         <section class="section">
-          <h2>Toe kick support frame</h2>
+          <h2>Toe kick</h2>
+          <div class="grid two">
+            <div><label for="toe">Toe kick height (mm)</label><input id="toe" type="number" step="1"></div>
+          </div>
           <div class="check"><input id="toe_frame" type="checkbox"><label for="toe_frame">Create timber support frame</label></div>
           <div class="grid two" style="margin-top:10px">
             <div><label for="timber_height">Upright timber height (mm)</label><input id="timber_height" type="number" min="20" max="200"></div>
             <div><label for="timber_thickness">Timber thickness (mm)</label><input id="timber_thickness" type="number" min="10" max="100"></div>
           </div>
-          <p class="hint">Default: 50 x 100 mm timber with 100 mm upright. Butt joints, full-width front/rear rails and cross rails at bay boundaries, with extra rails for spans over 600 mm. The frame sits behind the toe kick front; taller toe spaces receive legs. No frame is created at zero toe height.</p>
+          <p class="hint">Default: 50 x 100 mm timber with 100 mm upright. Butt joints, full-width front/rear rails and cross rails at bay boundaries, with extra rails for spans over 600 mm. The front panel spans the full cabinet width. The frame sits behind the toe kick front; taller toe spaces receive legs. No frame is created at zero toe height.</p>
         </section>
         <section class="section">
           <h2>Case construction</h2>

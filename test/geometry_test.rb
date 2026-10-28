@@ -195,6 +195,15 @@ def run_case(construction, frame, style, bay_kinds, overrides = {})
   parts.select { |part| part.name.include?('open shelf') }.each do |shelf|
     near(shelf.bounds_mm[0][1], frame ? config['frame_depth'] : 0, 'Open shelves retain full case depth')
   end
+  if config['toe'] > 0
+    toe_front = positions.fetch('Toe kick front')
+    near(toe_front[0][0], 0, 'Toe kick front starts at cabinet left edge')
+    near(toe_front[1][0], config['width'], 'Toe kick front covers full cabinet width')
+    near(toe_front[0][2], 0, 'Toe kick front reaches floor')
+    near(toe_front[1][2], config['toe'], 'Toe kick front reaches case bottom')
+  else
+    raise 'Unexpected toe kick front at zero height' if positions.key?('Toe kick front')
+  end
   timber_parts = parts.select { |part| part.name.start_with?('Toe frame ') }
   if config['toe_frame'] && config['toe'] > 0
     raise 'Missing support frame' if timber_parts.empty?

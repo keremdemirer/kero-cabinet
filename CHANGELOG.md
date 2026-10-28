@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.4.2 - 2026-10-28
+- Extend the toe kick front across the full cabinet width to cover the support frame ends.
+- Group toe kick height and timber support-frame settings in one Toe kick card.
+- Verify full-width coverage and floor-to-case panel height across geometry scenarios.
+
 ## v0.4.1 - 2026-10-28
 - Include the externally applied back panel within the requested overall depth.
 - Shorten case panels, shelves, drawer boxes, and the toe frame accordingly.
