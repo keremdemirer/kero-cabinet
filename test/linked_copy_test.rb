@@ -101,12 +101,15 @@ class LinkedCopyTest < Minitest::Test
     assert_same @source.definition, copy.definition
     source_transform, copy_transform = @source.transformation, copy.transformation
     config = @c.merge('width'=>1800,'worktop'=>true,'base_type'=>'casters')
+    config['bays'][1]['organizers']=[KeroCabinet.organizer_defaults.merge('type'=>'panels')]
     KeroCabinet.build_cabinet(KeroCabinet.validate_config(config),copy)
     assert_same @source.definition, copy.definition
     [@source,copy].each do |part|
       assert_equal 1800, JSON.parse(KeroCabinet.cabinet_config_raw(part))['width']
       assert part.definition.entities.instances.any? { |child| child.name=='Cabinet worktop' }
       assert_equal 4, part.definition.entities.instances.count { |child| child.material.name=='Caster Hardware' }
+      assert_equal 3,part.definition.entities.instances.count { |child| child.name.include?(' divider ') }
+      assert_equal 'panels',JSON.parse(KeroCabinet.cabinet_config_raw(part))['bays'][1]['organizers'][0]['type']
     end
     assert_same source_transform,@source.transformation
     assert_same copy_transform,copy.transformation

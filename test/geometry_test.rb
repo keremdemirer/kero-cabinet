@@ -7,6 +7,7 @@ end
 
 Z_AXIS = Object.new
 Y_AXIS = Object.new
+X_AXIS = Object.new
 module Geom
   class Transformation
     attr_reader :origin, :scale
@@ -38,7 +39,7 @@ class MockFace
   def initialize(definition, points)
     @definition = definition
     @points = points
-    @axis = points.respond_to?(:normal_axis) ? points.normal_axis : 2
+    @axis = points.respond_to?(:normal_axis) ? points.normal_axis : (0..2).find { |axis| points.map { |p| p[axis] }.uniq.length==1 } || 2
     @up = false # SketchUp ground plane faces always initially face down.
   end
   def normal

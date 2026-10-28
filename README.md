@@ -2,7 +2,7 @@
 
 **A parametric cabinet builder for SketchUp.** Enter dimensions and a bay layout to create an editable cabinet component.
 
-Version: **v0.15.0 (early development)**. The original project reports use in SketchUp 2025. Automated tests use a mock SketchUp API; they are not runtime integration tests.
+Version: **v0.16.0 (early development)**. The original project reports use in SketchUp 2025. Automated tests use a mock SketchUp API; they are not runtime integration tests.
 
 ## Features
 
@@ -22,14 +22,14 @@ The plugin does not generate cut lists. It targets **CutList v4.1.12** for the c
 
 1. Download the RBZ from the `kero-cabinet-rbz` artifact of a successful GitHub Actions run, or build it locally.
 2. In SketchUp, open **Extensions > Extension Manager > Install Extension**.
-3. Select `Kero_Cabinet_v0.15.0.rbz` and restart SketchUp.
+3. Select `Kero_Cabinet_v0.16.0.rbz` and restart SketchUp.
 4. Choose **Extensions > Kero Cabinet > Create new cabinet...**.
 
 To edit a cabinet, select its component and choose **Kero Cabinet | Edit parameters** from the context menu, or **Edit selected cabinet...** from the extension menu.
 
 ## Updates from GitHub
 
-Install v0.15.0 once using the RBZ. Future releases can be installed from
+Install v0.16.0 once using the RBZ. Future releases can be installed from
 **Extensions > Kero Cabinet > Check for updates...**, without downloading or
 installing another RBZ manually. The plugin reloads automatically after an update. Apply or cancel any open cabinet
 editor changes before starting: editors close during reload. The model is not
@@ -64,7 +64,7 @@ Internal shelves behind inset doors start behind the door back with the configur
 
 ### First upgrade to live reload
 
-The updater running before v0.15.0 still asks for a restart. After installing this
+The updater running before v0.9.0 still asks for a restart. After installing this
 version using the old updater or Extension Manager, apply/close Kero Cabinet
 editors, then run this once in **Window > Ruby Console** to activate without a
 SketchUp restart:
@@ -82,7 +82,7 @@ mock SketchUp API; real runtime validation on the user's installation is needed.
 ### Update connection troubleshooting
 
 Internet access in a browser does not prove that SketchUp can reach GitHub.
-From v0.15.0 the updater uses SketchUp's native HTTP transport and reports the
+From v0.6.1 the updater uses SketchUp's native HTTP transport and reports the
 actual failure category. Check application firewall/proxy/VPN settings when
 SketchUp cannot reach `api.github.com`. Certificate checks are never disabled.
 If an older updater cannot download this fix, install the current RBZ once via
@@ -331,6 +331,50 @@ Hook holes, locking devices, exact rear notches, grooves, runner models and dril
 are **not generated**. Prepare them with the manufacturer template before making
 a production drawer. The generated box is not a complete hardware-ready cut plan.
 
+## Drawer organizers
+
+Under **Layout > Drawer organizers**, choose an organizer independently for each
+drawer. Drawer 1 is the bottom drawer. **Apply to all drawers in this section**
+copies the current settings; later edits remain independent. Mixed-layout drawer
+sections support the same controls. Existing cabinets default to no organizers.
+Linked cabinet families share organizer settings along with their other parameters.
+
+**Panel dividers** support Front-to-back, Side-to-side and Grid layouts. Default
+stock is 6 mm Plywood, independent of drawer-box stock. Ratios such as `1 2 1`
+describe clear compartment sizes after reserving divider thickness. Each axis
+accepts 1-12 ratios. Default perimeter clearance is 1 mm per edge. Height `0`
+automatically leaves 10 mm above the dividers; a positive height sets a custom
+value and must leave at least 2 mm above. Dividers rest on the actual inside
+bottom surface, including an undermount bottom recess, and do not cut channels
+into the drawer. Grid dividers have complementary half-height notches at nominal
+stock thickness. Fit the slots to the measured sheet before fabrication; no
+extra machining tolerance is added. CutList measures the full blank dimensions,
+not the notch paths, using material names such as **6 mm Plywood Sheet**.
+Identical divider profiles share definitions; different notch layouts require
+separate profiles even when their sheet material is the same.
+
+**Gridfinity** is a layout planner using a 42 mm grid. It fits complete cells into
+the real drawer interior after edge clearance and supports Center or Front left
+alignment. **Update fit preview** reports cell counts, interior dimensions,
+left/right/front/back edge gaps and maximum bin height units. Add bins with a
+column, row, width/depth in cells and height in 7 mm units. Column 1 / row 1 is
+front left. Out-of-grid, overlapping and over-height bins are rejected.
+The top view labels each bin and shows the front at the top. Cabinet generation
+creates a baseplate envelope, grid lines and hollow bin envelopes for planning.
+Edge gaps are reported; printable fillers are not generated in this release.
+
+Gridfinity previews use `42n - 0.5 mm` bin footprints, a 3.8 mm lip allowance and
+a conservative, fully additive 5 mm baseplate allowance for height checks.
+Actual mating feet nest into sockets, so the preview is not an exact assembled
+product height. There are no mating profiles, magnets, screw holes, stacking
+features or printable STL exports. Select a real baseplate/bin profile and check
+its fit separately. Preview components/material are **Gridfinity Preview Hardware**,
+so CutList classifies them as hardware instead of wood or sheet goods.
+The grid reference is the [community Gridfinity specification](https://github.com/gridfinity-unofficial/specification).
+
+Fit preview runs the same layout calculations as model generation without changing
+the model. Refresh it after changing dimensions, stock, hardware or organizer settings.
+
 ## Base options
 
 Choose **Base > Base type**:
@@ -414,6 +458,8 @@ ruby test/drawer_height_test.rb
 ruby test/reload_test.rb
 ruby test/stock_test.rb
 ruby test/worktop_test.rb
+ruby test/base_test.rb
+ruby test/organizer_test.rb
 ruby test/linked_copy_test.rb
 node test/editor_test.js
 ruby test/updater_test.rb
@@ -421,13 +467,13 @@ python3 scripts/update_manifest.py --check
 bash scripts/build.sh
 ```
 
-Output: `dist/Kero_Cabinet_v0.15.0.rbz`.
+Output: `dist/Kero_Cabinet_v0.16.0.rbz`.
 
 CI checks text, Ruby syntax, 27 geometry configurations, and archive integrity on pushes and pull requests. Successful runs upload the installation package.
 
 ## Existing models
 
-From v0.15.0, regenerating a cabinet replaces per-part definitions with shared
+From v0.10.0, regenerating a cabinet replaces per-part definitions with shared
 stock definitions and applies stock-based material names.
 
 From v0.4.1, the saved depth value includes the back panel. Editing and regenerating an older cabinet with the same depth shortens its case by the back thickness. To preserve its previous physical depth, increase the input by that thickness before regenerating.
@@ -436,7 +482,7 @@ Stored configuration keys and enum values remain compatible. Existing user-enter
 
 ## Limitations
 
-- No hinge holes, runner models, or joinery details.
+- No hinge holes or runner machining. Organizer half-lap profiles are modeled; other manufacturing joinery is not generated.
 - Drawer boxes use simple rectangular panels.
 - Not every dimension combination or manufacturing tolerance has been verified in SketchUp.
 - Runtime UI and full CutList export require manual testing in SketchUp. OpenCutList has not been validated.
@@ -445,9 +491,9 @@ Stored configuration keys and enum values remain compatible. Existing user-enter
 
 No license has been selected. No new license is added by this translation.
 
-From v0.15.0, overlay front thickness is also included in the saved depth value. Regenerating an older overlay cabinet with the same input shortens the case by the front thickness. Increase the input by the front thickness only if you want to preserve the old physical depth.
+From v0.6.4, overlay front thickness is also included in the saved depth value. Regenerating an older overlay cabinet with the same input shortens the case by the front thickness. Increase the input by the front thickness only if you want to preserve the old physical depth.
 
-### Drawer depth fitting (v0.15.0)
+### Drawer depth fitting (v0.8.1)
 
 Undermount Auto selects the longest supported nominal length fitting the available
 space, retaining required rear allowance. Supported lengths currently stop at
@@ -460,4 +506,4 @@ slide lengths, brackets and mounting details still need product-specific review.
 
 Overlay stacked sections use the same gap-centered front grid as uniform drawer banks. With matching cabinet height, toe height, and gap, a bottom section weighted 1 of a total 4 aligns with the bottom front of four equal drawers. Inset sections retain divider/face-frame allowances and do not guarantee the same front-edge alignment.
 
-From v0.15.0, regenerating a cabinet with its integrated worktop enabled includes that top within the saved Overall height. To preserve the taller physical height generated by v0.12.0, increase the saved height by the worktop thickness before regeneration. Independent worktops are unchanged.
+From v0.12.1, regenerating a cabinet with its integrated worktop enabled includes that top within the saved Overall height. To preserve the taller physical height generated by v0.12.0, increase the saved height by the worktop thickness before regeneration. Independent worktops are unchanged.

@@ -1,5 +1,5 @@
 # frozen_string_literal: true
-# Kero Cabinet v0.15.0, SketchUp 2020+; all design inputs use millimetres.
+# Kero Cabinet v0.16.0, SketchUp 2020+; all design inputs use millimetres.
 require 'sketchup.rb'
 require 'json'
 require_relative 'updater'
@@ -9,7 +9,7 @@ module KeroCabinet
 
   %i[DICT VERSION DEFAULT DRAWER_SLIDES].each { |name| remove_const(name) if const_defined?(name, false) }
   DICT = 'kero_cabinet'.freeze
-  VERSION = '0.15.0'.freeze
+  VERSION = '0.16.0'.freeze
 
   DEFAULT = {
     'name' => 'Parametric Cabinet',
@@ -115,6 +115,16 @@ module KeroCabinet
       end
     end
 
+    dialog.add_action_callback('organizer_preview') do |_context, raw|
+      begin
+        request=JSON.parse(raw)
+        rows=generate_parts(nil,validate_config(request.fetch('config')),nil,preview:true)
+        version=Integer(request.fetch('version'))
+        dialog.execute_script("receiveOrganizerPreview(#{JSON.generate(rows)},#{version})")
+      rescue StandardError => e
+        dialog.execute_script("showError(#{JSON.generate(e.message)})")
+      end
+    end
     @dialogs ||= []
     @dialogs << dialog
     dialog.set_on_closed { @dialogs.delete(dialog) }
@@ -343,6 +353,181 @@ module KeroCabinet
     integer_between!(item, 'doors', 1, 2)
     integer_between!(item, 'drawers', 1, 8)
     integer_between!(item, 'shelves', 0, 8)
+    if item['kind']=='drawer' && item.key?('organizers')
+      raise ArgumentError, 'Drawer organizers must be a list with up to 8 entries.' unless item['organizers'].is_a?(Array) && item['organizers'].length<=8
+      item['organizers']=item['organizers'].map do |organizer|
+        begin
+          validate_organizer(organizer)
+        rescue ArgumentError => e
+          raise ArgumentError, "Drawer organizer: #{e.message}"
+        end
+      end
+    end
+  end
+
+  def organizer_defaults
+    { 'type'=>'none', 'layout'=>'grid', 'thickness'=>6.0, 'material'=>'Plywood',
+      'columns'=>'1 1 1', 'rows'=>'1 1', 'height'=>0.0, 'clearance'=>1.0,
+      'align'=>'center', 'bins'=>[] }
+  end
+
+  def organizer_ratios(value)
+    values = value.to_s.split(/[\s,;]+/).map { |part| Float(part) }
+    unless values.length.between?(1,12) && values.all? { |v| v.finite? && v.between?(0.1,100) }
+      raise ArgumentError, 'Organizer ratios need 1-12 positive numbers between 0.1 and 100, such as 1 2 1.'
+    end
+    values
+  rescue TypeError, ArgumentError
+    raise ArgumentError, 'Organizer ratios need 1-12 positive numbers between 0.1 and 100, such as 1 2 1.'
+  end
+
+  def validate_organizer(source)
+    raise ArgumentError, 'Invalid drawer organizer settings.' unless source.is_a?(Hash)
+    o = organizer_defaults.merge(source)
+    raise ArgumentError, 'Choose None, Panel dividers or Gridfinity for the organizer.' unless %w[none panels gridfinity].include?(o['type'])
+    return o if o['type']=='none'
+    number_between!(o,'clearance',0,5)
+    if o['type']=='panels'
+      raise ArgumentError, 'Choose Front-to-back, Side-to-side or Grid for panel dividers.' unless %w[front_back side_side grid].include?(o['layout'])
+      number_between!(o,'thickness',3,18)
+      number_between!(o,'height',0,500)
+      o['material']=o['material'].to_s.strip
+      unless o['material'].match?(/\A[A-Za-z0-9][A-Za-z0-9 ._-]{0,39}\z/) && o['material'] !~ /part|hardware/i
+        raise ArgumentError, 'Organizer material needs an English name without part or hardware keywords.'
+      end
+      organizer_ratios(o['columns'])
+      organizer_ratios(o['rows'])
+    else
+      raise ArgumentError, 'Gridfinity alignment must be Center or Front left.' unless %w[center front_left].include?(o['align'])
+      raise ArgumentError, 'Gridfinity supports up to 64 bins per drawer.' unless o['bins'].is_a?(Array) && o['bins'].length<=64
+      o['bins'].each do |bin|
+        raise ArgumentError, 'Invalid Gridfinity bin.' unless bin.is_a?(Hash)
+        %w[x y w d h].each do |key|
+          value=Float(bin[key]) rescue nil
+          raise ArgumentError, 'Gridfinity bin cells and height units must be whole numbers.' unless value && value.finite? && value==value.floor
+        end
+        %w[x y].each { |key| integer_between!(bin,key,1,120) }
+        %w[w d].each { |key| integer_between!(bin,key,1,120) }
+        integer_between!(bin,'h',1,60)
+      end
+    end
+    o
+  end
+
+  # Equal values give equal clear compartments; thickness is reserved first.
+  def organizer_divisions(length, ratios, thickness)
+    clear = length-(ratios.length-1)*thickness
+    raise ArgumentError, 'Organizer panel thickness leaves insufficient compartment space.' if clear/ratios.sum*ratios.min < 10
+    cursor = 0.0
+    ratios[0...-1].map do |ratio|
+      cursor += clear*ratio/ratios.sum
+      position = cursor
+      cursor += thickness
+      position
+    end
+  end
+
+  # Pure layout calculation shared by model generation and the editor fit preview.
+  def organizer_plan(source, width, depth, height)
+    o=validate_organizer(source)
+    plan={ 'type'=>o['type'], 'width'=>width, 'depth'=>depth, 'height'=>height, 'pieces'=>[], 'bins'=>[] }
+    return plan if o['type']=='none'
+    margin=o['clearance']
+    w,d=width-2*margin,depth-2*margin
+    raise ArgumentError, 'Organizer clearance leaves no usable space.' if [w,d].min<10
+    if o['type']=='panels'
+      t=o['thickness']
+      ph=o['height'].zero? ? height-10 : o['height']
+      raise ArgumentError, "Organizer height must be at least #{[12,t].max.round(1)} mm and no more than #{(height-2).round(1)} mm in this drawer." unless ph>=[12,t].max && ph<=height-2
+      xs=o['layout']=='side_side' ? [] : organizer_divisions(w,organizer_ratios(o['columns']),t)
+      ys=o['layout']=='front_back' ? [] : organizer_divisions(d,organizer_ratios(o['rows']),t)
+      xs.each { |x| plan['pieces'] << { 'axis'=>'y', 'x'=>x+margin, 'y'=>margin, 'length'=>d, 'thickness'=>t, 'height'=>ph, 'notches'=>ys.map { |y| [y, t] }, 'notch_from'=>'bottom' } }
+      ys.each { |y| plan['pieces'] << { 'axis'=>'x', 'x'=>margin, 'y'=>y+margin, 'length'=>w, 'thickness'=>t, 'height'=>ph, 'notches'=>xs.map { |x| [x, t] }, 'notch_from'=>'top' } }
+      plan['material']="#{stock_number(t)} mm #{o['material']} Sheet"
+    else
+      cols,rows=(w/42).floor,(d/42).floor
+      raise ArgumentError, 'Gridfinity needs at least one 42 x 42 mm cell inside the drawer.' if cols<1 || rows<1
+      ox=margin+(o['align']=='center' ? (w-cols*42)/2 : 0)
+      oy=margin+(o['align']=='center' ? (d-rows*42)/2 : 0)
+      plan.merge!('columns'=>cols,'rows'=>rows,'origin'=>[ox,oy], 'grid_width'=>cols*42,'grid_depth'=>rows*42,
+        'edge_gaps'=>[ox,width-ox-cols*42,oy,depth-oy-rows*42], 'base_height'=>5,
+        'max_height_units'=>[( (height-2-5-3.8)/7 ).floor,0].max)
+      raise ArgumentError, 'Gridfinity baseplate preview needs at least 7.3 mm of internal height.' if height<7.3
+      o['bins'].each_with_index do |bin,index|
+        if bin['x']+bin['w']-1>cols || bin['y']+bin['d']-1>rows
+          raise ArgumentError, "Gridfinity bin #{index+1} is outside the #{cols} x #{rows} grid."
+        end
+        bh=bin['h']*7+3.8
+        raise ArgumentError, "Gridfinity bin #{index+1} is too tall. Maximum #{plan['max_height_units']} height units with the preview base and top clearance." if bh+5>height-2
+        o['bins'][0...index].each do |other|
+          if bin['x']<other['x']+other['w'] && other['x']<bin['x']+bin['w'] && bin['y']<other['y']+other['d'] && other['y']<bin['y']+bin['d']
+            raise ArgumentError, "Gridfinity bins #{o['bins'].index(other)+1} and #{index+1} overlap."
+          end
+        end
+        plan['bins'] << bin.merge('px'=>ox+(bin['x']-1)*42+0.25,'py'=>oy+(bin['y']-1)*42+0.25,
+          'width'=>bin['w']*42-0.5,'depth'=>bin['d']*42-0.5,'height'=>bh)
+      end
+    end
+    plan
+  end
+
+  # Profile includes real half-lap notches; bounding dimensions remain CutList stock sizes.
+  def organizer_panel(entities,tag,piece,material,origin,model)
+    length,t,height=piece.values_at('length','thickness','height')
+    notch_top=piece['notch_from']=='top'
+    edge=[[0,0]]
+    if !notch_top
+      piece['notches'].each { |start,width| edge.concat([[start,0],[start,height/2],[start+width,height/2],[start+width,0]]) }
+    end
+    edge.concat([[length,0],[length,height]])
+    if notch_top
+      piece['notches'].reverse_each { |start,width| edge.concat([[start+width,height],[start+width,height/2],[start,height/2],[start,height]]) }
+    end
+    edge << [0,height]
+    key="organizer-panel-v1:#{material}:#{piece['axis']}:#{length}:#{t}:#{height}:#{piece['notch_from']}:#{piece['notches']}"
+    definition=model.definitions.find { |item| item.get_attribute(DICT,'stock_key')==key }
+    unless definition
+      definition=model.definitions.add("#{material} - divider")
+      definition.set_attribute(DICT,'stock_key',key)
+      definition.description='Removable drawer divider. Grid crossings use half-height slots at nominal stock thickness; fit to actual sheet thickness.'
+      points=edge.map { |a,b| piece['axis']=='x' ? [mm(a),0,mm(b)] : [0,mm(a),mm(b)] }
+      face=definition.entities.add_face(points)
+      raise 'Could not create organizer divider profile.' unless face
+      face.reverse! unless face.normal.samedirection?(piece['axis']=='x' ? Y_AXIS : X_AXIS)
+      face.pushpull(mm(t))
+    end
+    stock_material=model.materials[material]||model.materials.add(material)
+    stock_material.color=Sketchup::Color.new(214,179,130)
+    instance=entities.add_instance(definition,Geom::Transformation.new([origin[0]+piece['x'],origin[1]+piece['y'],origin[2]].map { |v| mm(v) }))
+    instance.name=tag
+    instance.material=stock_material
+    instance.set_attribute(DICT,'part_name',tag)
+  end
+
+  def generate_organizer(entities,tag,plan,origin,model)
+    plan['pieces'].each_with_index { |piece,index| organizer_panel(entities,"#{tag} divider #{index+1}",piece,plan['material'],origin,model) }
+    return unless plan['type']=='gridfinity'
+    cache={}
+    # Preview envelopes intentionally omit mating feet, sockets, magnets and print tolerances.
+    stock={name:'Gridfinity Preview Hardware',base:[1.0,1.0,1.0],type:'hardware'}
+    add=lambda do |name,x,y,z,w,d,h|
+      box(entities,"#{tag} Gridfinity #{name}",stock,origin[0]+x,origin[1]+y,origin[2]+z,w,d,h,cache)
+    end
+    ox,oy=plan['origin']
+    add.call('baseplate envelope',ox,oy,0,plan['grid_width'],plan['grid_depth'],5)
+    (1...plan['columns']).each { |index| add.call("grid column #{index}",ox+index*42-0.25,oy,5,0.5,plan['grid_depth'],0.3) }
+    (1...plan['rows']).each { |index| add.call("grid row #{index}",ox,oy+index*42-0.25,5,plan['grid_width'],0.5,0.3) }
+
+    plan['bins'].each_with_index do |bin,index|
+      x,y,w,d,h=bin.values_at('px','py','width','depth','height')
+      label="bin #{index+1}"
+      add.call("#{label} bottom",x,y,5,w,d,1.2)
+      add.call("#{label} left wall",x,y,6.2,1.2,d,h-1.2)
+      add.call("#{label} right wall",x+w-1.2,y,6.2,1.2,d,h-1.2)
+      add.call("#{label} front wall",x+1.2,y,6.2,w-2.4,1.2,h-1.2)
+      add.call("#{label} back wall",x+1.2,y+d-1.2,6.2,w-2.4,1.2,h-1.2)
+    end
+    model.materials[stock[:name]].color=Sketchup::Color.new(142,174,156)
   end
 
   def stock_number(value)
@@ -418,7 +603,8 @@ module KeroCabinet
     end
   end
 
-  def generate_parts(entities, c, model)
+  def generate_parts(entities, c, model, preview: false)
+    organizer_previews=[]
     w, h, d = c.values_at('width', 'height', 'depth')
     h = case_height(c)
     d = case_depth(c)
@@ -430,7 +616,7 @@ module KeroCabinet
     g = c['gap']
     palette = {}
     add = lambda do |name, material, x, y, z, sx, sy, sz|
-      box(entities, name, part_stock(name, material, c), x, y, z, sx, sy, sz, palette)
+      box(entities, name, part_stock(name, material, c), x, y, z, sx, sy, sz, palette) unless preview
     end
 
     # Carcass construction. The selected full-length direction also determines
@@ -476,7 +662,7 @@ module KeroCabinet
     n = c['bays'].length
 
     generate_toe_frame(add, c, bounds, fd) if c['base_type'] == 'timber' && c['toe_frame'] && toe > 0
-    generate_casters(entities, c, model) if c['base_type'] == 'casters'
+    generate_casters(entities, c, model) if c['base_type'] == 'casters' && !preview
 
     # Full-height intermediate panels and face-frame stiles align with bays.
     (1...n).each do |i|
@@ -643,6 +829,13 @@ module KeroCabinet
           add.call("#{tag} back rail", 'Drawer box', dbx+dt, dby+dbd-dt, dbz+recess, dbw-2*dt, dt, dbh-recess)
           add.call("#{tag} bottom", 'Drawer box', dbx+dt, dby+dt, dbz+recess,
                    dbw-2*dt, dbd-2*dt, bottom_t)
+          begin
+            plan=organizer_plan((section['organizers'] || [])[j] || organizer_defaults,dbw-2*dt,dbd-2*dt,dbh-recess-bottom_t)
+            organizer_previews << { 'key'=>"#{i}:#{bay['kind']=='stack' ? section_index : -1}:#{j}", 'plan'=>plan }
+            generate_organizer(entities,tag,plan,[dbx+dt,dby+dt,dbz+recess+bottom_t],model) unless preview
+          rescue ArgumentError => e
+            raise ArgumentError, "#{tag} organizer: #{e.message}"
+          end
         end
       when 'open'
         section['shelves'].times do |j|
@@ -653,10 +846,11 @@ module KeroCabinet
       end
       end
     end
-    if c['worktop']
+    if c['worktop'] && !preview
       geometry = worktop_geometry(cabinet_worktop_config(c))
       box(entities, 'Cabinet worktop', geometry[:stock], *geometry[:origin], *geometry[:size], palette)
     end
+    organizer_previews
   end
 
   # Full-width front/rear rails; transverse members butt between them.
@@ -1023,7 +1217,7 @@ module KeroCabinet
       </style>
       </head>
       <body>
-      <header class="editor-header"><div><h1>Kero Cabinet</h1><p>Design your cabinet. Fine-tune only what you need.</p></div><span class="version-tag">v0.15.0 &middot; mm</span></header>
+      <header class="editor-header"><div><h1>Kero Cabinet</h1><p>Design your cabinet. Fine-tune only what you need.</p></div><span class="version-tag">v0.16.0 &middot; mm</span></header>
       <p id="linked-notice" class="linked-notice" hidden></p>
       <nav class="editor-tabs" role="tablist" aria-label="Cabinet settings">
         <button id="tab-size" type="button" role="tab" data-tab="size" aria-controls="panel-size" aria-selected="true" onclick="showTab('size')">Size &amp; fronts</button>
@@ -1199,12 +1393,13 @@ module KeroCabinet
         function newSection(kind='door',weight=1){return {kind,weight,doors:1,drawers:1,shelves:1};}
         function changeBay(i,key,value){
           bays[i][key]=key==='kind'?value:Number(value);
+          if(key==='drawers')renderBays();
           if(key==='kind'){
             if(value==='stack'&&!bays[i].sections)bays[i].sections=[newSection('drawer',1),newSection('door',3)];
             renderBays();
           }
         }
-        function changeSection(i,j,key,value){bays[i].sections[j][key]=key==='kind'?value:Number(value);if(key==='kind')renderBays();}
+        function changeSection(i,j,key,value){bays[i].sections[j][key]=key==='kind'?value:Number(value);if(key==='kind'||key==='drawers')renderBays();}
         function addSection(i){if(bays[i].sections.length>=6)return showError('A bay supports up to 6 stacked sections.');bays[i].sections.push(newSection());renderBays();}
         function removeSection(i,j){if(bays[i].sections.length>2){bays[i].sections.splice(j,1);renderBays();}}
         function moveSection(i,j,direction){const items=bays[i].sections;const target=j+direction;if(target>=0&&target<items.length){[items[j],items[target]]=[items[target],items[j]];renderBays();}}
@@ -1218,6 +1413,50 @@ module KeroCabinet
           renderBays();
         }
         function refreshLayout(){renderBays();}
+        let organizerFits={};
+        let organizerRevision=0;
+        function organizerItem(i,s){return s<0?bays[i]:bays[i].sections[s];}
+        function organizerDefault(){return {type:'none',layout:'grid',thickness:6,material:'Plywood',columns:'1 1 1',rows:'1 1',height:0,clearance:1,align:'center',bins:[]};}
+        function organizerAt(i,s,j){const item=organizerItem(i,s);return Object.assign(organizerDefault(),(item.organizers||[])[j]||{});}
+        function storeOrganizer(i,s,j,o){const item=organizerItem(i,s);if(!item.organizers)item.organizers=[];while(item.organizers.length<=j)item.organizers.push(organizerDefault());item.organizers[j]=o;organizerFits={};organizerRevision++;}
+        function changeOrganizer(i,s,j,key,value){const o=organizerAt(i,s,j);o[key]=['thickness','height','clearance'].includes(key)?Number(value):value;storeOrganizer(i,s,j,o);renderBays();}
+        function copyOrganizer(i,s,j){const item=organizerItem(i,s),o=organizerAt(i,s,j);item.organizers=Array.from({length:Number(item.drawers)},()=>JSON.parse(JSON.stringify(o)));organizerFits={};organizerRevision++;renderBays();}
+        function changeOrganizerBin(i,s,j,index,key,value){const o=organizerAt(i,s,j);o.bins[index][key]=Number(value);storeOrganizer(i,s,j,o);renderBays();}
+        function removeOrganizerBin(i,s,j,index){const o=organizerAt(i,s,j);o.bins.splice(index,1);storeOrganizer(i,s,j,o);renderBays();}
+        function addOrganizerBin(i,s,j){
+          const o=organizerAt(i,s,j);if(o.bins.length>=64)return showError('Gridfinity supports up to 64 bins per drawer.');
+          const fit=organizerFits[`${i}:${s}:${j}`],cols=fit?.columns||12,rows=fit?.rows||12;
+          for(let y=1;y<=rows;y++)for(let x=1;x<=cols;x++)if(!o.bins.some(b=>x>=b.x&&x<b.x+b.w&&y>=b.y&&y<b.y+b.d)){
+            o.bins.push({x,y,w:1,d:1,h:Math.max(1,Math.min(3,fit?.max_height_units??3))});storeOrganizer(i,s,j,o);renderBays();return;
+          }
+          showError('Gridfinity has no free cell for another bin.');
+        }
+        function requestOrganizerPreview(){const c=collectConfig();if(!c)return;if(!window.sketchup?.organizer_preview)return showError('Organizer fit preview is available inside SketchUp.');window.sketchup.organizer_preview(JSON.stringify({config:c,version:organizerRevision}));}
+        function receiveOrganizerPreview(rows,version){if(version!==organizerRevision)return;organizerFits={};for(const row of rows)organizerFits[row.key]=row.plan;renderBays();}
+        function organizerDiagram(plan){
+          const w=plan.width,d=plan.depth;
+          let shapes=`<rect width="${w}" height="${d}" fill="#f3efe5" stroke="#b9aa8a"/>`;
+          if(plan.type==='panels')for(const p of plan.pieces)shapes+=`<rect x="${p.x}" y="${p.y}" width="${p.axis==='x'?p.length:p.thickness}" height="${p.axis==='y'?p.length:p.thickness}" fill="#9d7d50"/>`;
+          if(plan.type==='gridfinity'){
+            const [x,y]=plan.origin;
+            for(let c=0;c<=plan.columns;c++)shapes+=`<path d="M ${x+c*42} ${y} v ${plan.grid_depth}" stroke="#b6c5b1" stroke-width="1"/>`;
+            for(let r=0;r<=plan.rows;r++)shapes+=`<path d="M ${x} ${y+r*42} h ${plan.grid_width}" stroke="#b6c5b1" stroke-width="1"/>`;
+            plan.bins.forEach((b,index)=>{shapes+=`<rect x="${b.px}" y="${b.py}" width="${b.width}" height="${b.depth}" fill="#d6e4d1" stroke="#46704b" stroke-width="2"/><text x="${b.px+b.width/2}" y="${b.py+b.depth/2}" text-anchor="middle" dominant-baseline="middle" font-size="14">${index+1}</text>`;});
+          }
+          return `<svg viewBox="-3 -3 ${w+6} ${d+6}" role="img" aria-label="Organizer top view. Front is at the top." style="display:block;width:100%;max-height:240px;margin:10px 0">${shapes}</svg><p class="hint">Top view &middot; front at top</p>`;
+        }
+        function organizerCards(item,i,s){
+          return `<details class="help-details" ${item.organizers?.some(o=>o.type!=='none')?'open':''}><summary>Drawer organizers</summary><p class="hint">Drawer 1 is the bottom drawer. Each drawer can use a different organizer. Fit uses the actual box interior, including runner and stock deductions.</p>${Array.from({length:Math.min(8,Number(item.drawers)||1)},(_,j)=>{
+            const o=organizerAt(i,s,j),args=`${i},${s},${j}`,fit=organizerFits[`${i}:${s}:${j}`];
+            const select=(key,label,options)=>`<div><label>${label}</label><select aria-label="${label}" onchange="changeOrganizer(${args},'${key}',this.value)">${options.map(([value,text])=>`<option value="${value}" ${o[key]===value?'selected':''}>${text}</option>`).join('')}</select></div>`;
+            const field=(key,label,min,max,step=1,text=false)=>`<div><label>${label}</label><input aria-label="${label}" type="${text?'text':'number'}" ${text?'':`required min="${min}" max="${max}" step="${step}"`} value="${escapeHtml(o[key])}" onchange="changeOrganizer(${args},'${key}',this.value)"></div>`;
+            return `<div class="stack-item"><strong>Drawer ${j+1} &middot; ${j===0?'bottom':j===Number(item.drawers)-1?'top':'middle'}</strong>${select('type','Organizer',[['none','None'],['panels','Panel dividers'],['gridfinity','Gridfinity']])}${o.type==='none'?'':`<div class="grid two">${field('clearance','Edge clearance (mm)',0,5,0.1)}${o.type==='panels'?`${select('layout','Panel layout',[['front_back','Front-to-back'],['side_side','Side-to-side'],['grid','Grid']])}${field('thickness','Divider thickness (mm)',3,18,0.1)}${field('material','Divider material',0,0,1,true)}${field('height','Divider height (0 = auto)',0,500,1)}${o.layout!=='side_side'?field('columns','Left-to-right ratios',0,0,1,true):''}${o.layout!=='front_back'?field('rows','Front-to-back ratios',0,0,1,true):''}`:select('align','Grid position',[['center','Center'],['front_left','Front left']])}</div>
+            <p class="hint">${o.type==='panels'?'Ratios such as 1 2 1 describe clear compartments. Auto height leaves 10 mm above. Grid crossings use half-lap slots; fit slots to actual sheet thickness. No grooves are cut into the drawer.':'42 mm grid. Preview envelopes only: no mating profiles or printable STL. Heights use 7 mm units, a 3.8 mm lip allowance and a conservative 5 mm baseplate allowance. Column 1 / row 1 is front left.'}</p>
+            ${o.type==='gridfinity'?`${o.bins.map((bin,index)=>`<div class="stack-item"><div class="stack-head"><strong>Bin ${index+1}</strong><button type="button" onclick="removeOrganizerBin(${args},${index})">Remove</button></div><div class="grid two">${[['x','Column'],['y','Row'],['w','Width (cells)'],['d','Depth (cells)'],['h','Height (7 mm units)']].map(([key,label])=>`<div><label>${label}</label><input type="number" required min="1" max="${key==='h'?60:120}" value="${escapeHtml(bin[key])}" aria-label="Bin ${index+1} ${label}" onchange="changeOrganizerBin(${args},${index},'${key}',this.value)"></div>`).join('')}</div></div>`).join('')}<button type="button" onclick="addOrganizerBin(${args})">+ Add bin</button>`:''}
+            <button type="button" onclick="requestOrganizerPreview()">Update fit preview</button>${fit?`<p class="hint">Inside: ${fit.width.toFixed(1)} x ${fit.depth.toFixed(1)} x ${fit.height.toFixed(1)} mm${fit.type==='gridfinity'?` &middot; ${fit.columns} x ${fit.rows} cells &middot; max ${fit.max_height_units}u<br>Edge gaps L/R/F/B: ${fit.edge_gaps.map(v=>v.toFixed(1)).join(' / ')} mm`:''}</p>${organizerDiagram(fit)}`:'<p class="hint">Update fit after changing cabinet dimensions or organizer settings.</p>'}`}
+            ${Number(item.drawers)>1?`<button type="button" class="ghost" onclick="copyOrganizer(${args})">Apply to all drawers in this section</button>`:''}</div>`;
+          }).join('')}</details>`;
+        }
         function counts(item,action){
           return `${item.kind==='drawer'?`<div><label>Drawers</label><input type="number" required min="1" max="8" value="${item.drawers}" aria-label="Drawer count" onchange="${action.replace('KEY','drawers')}"></div>`:item.kind==='door'?`<div><label>Doors side by side</label><select aria-label="Door count" onchange="${action.replace('KEY','doors')}"><option value="1" ${item.doors==1?'selected':''}>1 door</option><option value="2" ${item.doors==2?'selected':''}>2 doors</option></select></div>`:''}
           ${item.kind!=='drawer'?`<div><label>Shelves inside</label><input type="number" required min="0" max="8" value="${item.shelves}" aria-label="Shelf count" onchange="${action.replace('KEY','shelves')}"></div>`:''}`;
@@ -1234,7 +1473,7 @@ module KeroCabinet
             <button type="button" aria-label="Remove section" title="Remove section" onclick="removeSection(${i},${j})" ${b.sections.length<=2?'disabled':''}>&times;</button></div></div>
             ${typePicker(section.kind,`changeSection(${i},${j},'kind','VALUE')`)}
             <div class="stack-grid"><div><div class="share-line"><label>Height ratio</label><span class="share-badge">${percent(section)}% of height</span></div><input type="number" aria-label="Section height ratio" required min="0.2" max="10" step="0.1" value="${escapeHtml(section.weight)}" onchange="changeSection(${i},${j},'weight',this.value);refreshLayout()"></div>
-            ${counts(section,`changeSection(${i},${j},'KEY',this.value)`)}</div></div>`).join('');
+            ${counts(section,`changeSection(${i},${j},'KEY',this.value)`)}</div>${section.kind==='drawer'?organizerCards(section,i,j):''}</div>`).join('');
           return `<div class="layout-tools"><span>Quick layout</span><button type="button" class="preset" onclick="layoutPreset(${i},'drawer')">Drawer + doors</button><button type="button" class="preset" onclick="layoutPreset(${i},'equal')">Equal split</button><button type="button" class="preset" onclick="layoutPreset(${i},'three')">3 sections</button></div><p class="section-intro">Shown top to bottom, like your cabinet. Height ratios share the available space; divider panels are automatic.</p><div class="section-layout">${preview}<div><button type="button" class="add-section" onclick="addSection(${i})" ${b.sections.length>=6?'disabled':''}>+ Add section above</button><div style="height:10px"></div>${cards}</div></div>`;
         }
         function renderBays(){
@@ -1242,7 +1481,7 @@ module KeroCabinet
           document.getElementById('bays').innerHTML=bays.map((b,i)=>`<div class="bay"><div class="bayhead"><div>Bay ${i+1}<div class="bay-subtitle">${bays.length===1?'Full cabinet width':i===0?'Left':i===bays.length-1?'Right':'Middle'} &middot; ${Math.round((Number(b.weight)||0)*100/total)}% of width</div></div><button class="ghost remove" onclick="removeBay(${i})" type="button" ${bays.length<=1?'disabled':''}>Remove bay</button></div>
             ${typePicker(b.kind,`changeBay(${i},'kind','VALUE')`,true)}
             ${bays.length>1?`<div class="bay-width"><label>Width ratio</label><input type="number" aria-label="Bay width ratio" required min="0.2" max="10" step="0.1" value="${escapeHtml(b.weight)}" onchange="changeBay(${i},'weight',this.value);refreshLayout()"><span>Equal values give equal widths.</span></div>`:''}
-            ${b.kind==='stack'?renderSections(b,i):`<div class="stack-grid">${counts(b,`changeBay(${i},'KEY',this.value)`)}</div><p class="hint">Need drawers below doors? Choose Mixed layout above.</p>`}</div>`).join('');
+            ${b.kind==='stack'?renderSections(b,i):`<div class="stack-grid">${counts(b,`changeBay(${i},'KEY',this.value)`)}</div>${b.kind==='drawer'?organizerCards(b,i,-1):''}<p class="hint">Need drawers below doors? Choose Mixed layout above.</p>`}</div>`).join('');
           updateSummary();
         }
         const tabOrder=['size','layout','build','base','worktop'];
@@ -1280,10 +1519,10 @@ module KeroCabinet
           if(!message)return;
           if(/worktop/i.test(message))showTab('worktop');
           else if(/toe kick|timber|caster|base/i.test(message))showTab('base');
-          else if(/bay|section|height ratio|drawer front/i.test(message))showTab('layout');
+          else if(/organizer|gridfinity|bay|section|height ratio|drawer front/i.test(message))showTab('layout');
           else if(/hardware|slide|stock|thickness|construction|rail|drawer height limit/i.test(message))showTab('build');
         }
-        function submitConfig(){
+        function collectConfig(){
           showError('');
           for(const input of document.querySelectorAll('input[type=number]')){
             if(input.disabled)continue;
@@ -1299,9 +1538,14 @@ module KeroCabinet
           c.frame=document.getElementById('frame').checked;
           c.construction=document.querySelector('input[name=construction]:checked').value;
           c.bays=JSON.parse(JSON.stringify(bays));
+          return c;
+        }
+        function submitConfig(){
+          const c=collectConfig();if(!c)return;
           if(!window.sketchup || !window.sketchup.submit) return showError('This panel must be used inside SketchUp.');
           window.sketchup.submit(JSON.stringify(c));
         }
+        document.addEventListener('change',()=>{organizerFits={};organizerRevision++;renderBays();});
         updateFrame();updateConstruction();updateDrawerHardware();updateWorktop();updateToeKick();renderBays();updateSummary();
       </script>
       </body>

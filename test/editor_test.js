@@ -47,3 +47,37 @@ console.log('Editor tabs, keyboard navigation, hidden-field validation, advanced
 elements.base_type.value='none';context.updateToeKick();assert(elements['timber-base'].hidden);assert(elements['caster-fields'].hidden);assert(elements.toe.disabled);
 elements.base_type.value='casters';context.updateToeKick();assert(elements['timber-base'].hidden);assert(!elements['caster-fields'].hidden);assert(!elements.caster_height.disabled);elements.caster_height.value='120';elements.caster_diameter.value='80';context.submitConfig();assert.equal(submitted.base_type,'casters');assert.equal(submitted.caster_height,120);
 context.showError('Worktop material is invalid');assert(!elements['panel-worktop'].hidden);context.showError('Caster plates do not fit');assert(!elements['panel-base'].hidden);console.log('Base modes, conditional fields, caster settings and separate Worktop tab passed.');
+
+// Drawer-specific organizer edits, deep-copy behavior and saved settings.
+context.changeBay(0,'kind','drawer');context.changeBay(0,'drawers','2');
+assert(elements.bays.innerHTML.includes('Drawer organizers'));
+assert(elements.bays.innerHTML.includes('Drawer 2'));
+context.changeOrganizer(0,-1,0,'type','panels');
+context.changeOrganizer(0,-1,0,'columns','1 2 1');
+context.changeOrganizer(0,-1,0,'height','60');
+context.copyOrganizer(0,-1,0);
+context.changeOrganizer(0,-1,1,'columns','1 1');
+assert.equal(context.organizerAt(0,-1,0).columns,'1 2 1');
+assert.equal(context.organizerAt(0,-1,1).columns,'1 1');
+context.changeOrganizer(0,-1,1,'type','gridfinity');
+context.addOrganizerBin(0,-1,1);context.addOrganizerBin(0,-1,1);
+context.changeOrganizerBin(0,-1,1,0,'w','2');
+context.removeOrganizerBin(0,-1,1,1);
+let previewRequest;
+context.window.sketchup.organizer_preview=raw=>{previewRequest=JSON.parse(raw);};
+context.requestOrganizerPreview();assert(previewRequest);
+assert.equal(previewRequest.config.bays[0].organizers[0].height,60);
+assert.equal(previewRequest.config.bays[0].organizers[1].bins[0].w,2);
+const plan={type:'gridfinity',width:500,depth:400,height:100,columns:11,rows:9,origin:[19,11],grid_width:462,grid_depth:378,edge_gaps:[19,19,11,11],max_height_units:12,bins:[{px:19.25,py:11.25,width:83.5,depth:41.5}],pieces:[]};
+context.receiveOrganizerPreview([{key:'0:-1:1',plan}],previewRequest.version);
+assert(elements.bays.innerHTML.includes('11 x 9 cells'));
+assert(elements.bays.innerHTML.includes('Organizer top view'));
+context.changeOrganizer(0,-1,1,'align','front_left');
+context.receiveOrganizerPreview([{key:'0:-1:1',plan}],previewRequest.version);
+assert(!elements.bays.innerHTML.includes('11 x 9 cells'),'Stale preview was accepted');
+context.submitConfig();assert.equal(submitted.bays[0].organizers[0].type,'panels');
+assert.equal(submitted.bays[0].organizers[1].type,'gridfinity');
+context.layoutPreset(0,'drawer');context.changeOrganizer(0,0,0,'type','panels');
+context.submitConfig();assert.equal(submitted.bays[0].sections[0].organizers[0].type,'panels');
+context.showError('Gridfinity bin 1 is outside the grid');assert(!elements['panel-layout'].hidden);
+console.log('Per-drawer panel/Gridfinity settings, fit preview, stale-response rejection and stacked serialization passed.');

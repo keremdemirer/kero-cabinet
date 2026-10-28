@@ -21,7 +21,8 @@ class CutListIntegrationTest < Minitest::Test
     end
     MockDef.class_eval do
       def bounds
-        Struct.new(:width, :height, :depth).new(points.map { |p| p[0] }.max, points.map { |p| p[1] }.max, extrusion)
+        sizes=mesh_max.zip(mesh_min).map { |high,low| high-low }
+        Struct.new(:width, :height, :depth).new(*sizes)
       end
     end
     MockInstance.class_eval do
@@ -57,6 +58,28 @@ class CutListIntegrationTest < Minitest::Test
     casters = caster_entities.instances.select { |part| part.material.name=='Caster Hardware' }
     assert_equal 4,casters.length
     casters.each do |part|
+      assert matcher.isPartOrSheet(%w[part hardware],part.material.name)
+      refute matcher.isPartOrSheet(%w[sheet veneer plywood hardboard mdf],part.material.name)
+    end
+    organized = KeroCabinet.clone_defaults
+    organized['bays']=[{'kind'=>'drawer','weight'=>1,'drawers'=>2,'doors'=>1,'shelves'=>0,'organizers'=>[
+      KeroCabinet.organizer_defaults.merge('type'=>'panels'),
+      KeroCabinet.organizer_defaults.merge('type'=>'gridfinity','bins'=>[{'x'=>1,'y'=>1,'w'=>2,'d'=>2,'h'=>3}])]}]
+    organized_entities=MockEntities.new
+    KeroCabinet.generate_parts(organized_entities,KeroCabinet.validate_config(organized),model)
+    dividers=organized_entities.instances.select { |part| part.name.include?(' divider ') }
+    assert_equal 3,dividers.length
+    dividers.each do |part|
+      actual=cutlist::CutListPart.new(part,part.definition.name,'Cabinet',part.material.name,true)
+      low,high=part.bounds_mm
+      expected=high.zip(low).map { |a,b| a-b }.sort
+      [actual.getThickness,actual.getWidth,actual.getLength].zip(expected).each { |inches,mm| assert_in_delta mm,inches*25.4,0.001 }
+      assert matcher.isPartOrSheet(%w[sheet veneer plywood hardboard mdf],part.material.name)
+      refute matcher.isPartOrSheet(%w[part hardware],part.material.name)
+    end
+    previews=organized_entities.instances.select { |part| part.name.include?(' Gridfinity ') }
+    assert_operator previews.length,:>,0
+    previews.each do |part|
       assert matcher.isPartOrSheet(%w[part hardware],part.material.name)
       refute matcher.isPartOrSheet(%w[sheet veneer plywood hardboard mdf],part.material.name)
     end

@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.16.0 - 2026-10-29
+- Add independent per-drawer None, Panel dividers and Gridfinity organizers, including stacked sections and linked cabinets.
+- Generate removable sheet dividers with weighted compartments, independent stock/height and complementary half-lap grid profiles.
+- Plan 42 mm Gridfinity layouts and bins using actual interior dimensions, with alignment, edge-gap reporting and collision/height checks.
+- Add model-free fit previews, top views and copy-to-section controls; reject stale preview responses.
+- Keep Gridfinity envelopes separate from sheet goods using Hardware classification; no printable mating profiles or STL export.
+- Verify organizer geometry, hardware/stock combinations, CutList measurements and editor serialization.
+
 ## v0.15.0 - 2026-10-29
 - Split Base and Worktop into separate editor tabs.
 - Add No base, Timber toe kick and Casters base modes, preserving legacy timber defaults.

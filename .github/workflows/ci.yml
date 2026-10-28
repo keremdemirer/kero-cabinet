@@ -37,6 +37,8 @@ jobs:
         run: ruby test/linked_copy_test.rb
       - name: Editor behavior
         run: node test/editor_test.js
+      - name: Drawer organizers
+        run: ruby test/organizer_test.rb
       - name: Base modes and caster geometry
         run: ruby test/base_test.rb
       - name: Worktop geometry
