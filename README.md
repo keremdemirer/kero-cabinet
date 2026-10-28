@@ -2,7 +2,7 @@
 
 **A parametric cabinet builder for SketchUp.** Enter dimensions and a bay layout to create an editable cabinet component.
 
-Version: **v0.17.0 (early development)**. The original project reports use in SketchUp 2025. Automated tests use a mock SketchUp API; they are not runtime integration tests.
+Version: **v0.17.1 (early development)**. The original project reports use in SketchUp 2025. Automated tests use a mock SketchUp API; they are not runtime integration tests.
 
 ## Features
 
@@ -22,14 +22,14 @@ The plugin does not generate cut lists. It targets **CutList v4.1.12** for the c
 
 1. Download the RBZ from the `kero-cabinet-rbz` artifact of a successful GitHub Actions run, or build it locally.
 2. In SketchUp, open **Extensions > Extension Manager > Install Extension**.
-3. Select `Kero_Cabinet_v0.17.0.rbz` and restart SketchUp.
+3. Select `Kero_Cabinet_v0.17.1.rbz` and restart SketchUp.
 4. Choose **Extensions > Kero Cabinet > Create new cabinet...**.
 
 To edit a cabinet, select its component and choose **Kero Cabinet | Edit parameters** from the context menu, or **Edit selected cabinet...** from the extension menu.
 
 ## Updates from GitHub
 
-Install v0.17.0 once using the RBZ. Future releases can be installed from
+Install v0.17.1 once using the RBZ. Future releases can be installed from
 **Extensions > Kero Cabinet > Check for updates...**, without downloading or
 installing another RBZ manually. The plugin reloads automatically after an update. Apply or cancel any open cabinet
 editor changes before starting: editors close during reload. The model is not
@@ -334,21 +334,27 @@ a production drawer. The generated box is not a complete hardware-ready cut plan
 ## Interior inspection
 
 Select a cabinet and open **Kero Cabinet > Interior view...**, the matching
-right-click command, or **Interior view...** in its parameter editor. This live
-panel uses the saved layout, so apply pending parameter edits first. Each door
-section and individual drawer has a **Show interior** switch. It hides only the
-selected fronts; case panels, shelves, drawer boxes and organizers remain visible
-and retain their positions. This is a cutaway inspection view, not an opening
-animation or hinge/runner simulation. Orbit the model to look into drawer boxes.
+right-click command, or **Interior view...** in its parameter editor. Apply pending
+parameter edits first; the live panel uses the saved cabinet layout.
+Each door section and individual drawer has an **Open** switch.
 
-**Show all interiors** and **Show all fronts** operate on the selected cabinet.
-Changes are undoable and stored in the model; regeneration preserves matching
-front states and discards states for removed fronts. View targets follow bay,
-section and drawer positions. Linked copies share the view. Ordinary copies are
-isolated when changing their view. The panel closes during plugin reload.
+Drawers slide forward as one assembly: applied front, box, divider panels and
+Gridfinity previews move together. Preview travel is 90% of the actual box depth.
+Doors swing outward by 90 degrees about their outer rear hinge edges; a single
+leaf is left-hinged and paired leaves open from opposite edges. Fronts remain
+visible. This is an open/closed pose, not an animation, commercial hinge model or
+hardware stroke/collision simulation. Inspect neighboring clearances separately.
 
-Use **Show all fronts** before CutList or exports that skip hidden objects;
-hiding a front does not delete its geometry or change its stock dimensions.
+**Open all** and **Close all** operate on the selected cabinet. Closing restores
+saved closed transforms exactly; repeated toggles do not accumulate movement.
+Changes are undoable, persist in the model and survive regeneration. Targets follow
+bay, section and drawer positions. Linked copies share the pose; ordinary copies
+are isolated when changing it. Old hidden-front states migrate to opening poses
+when the panel is next used. The panel closes during plugin reload.
+
+Close all before measuring overall cabinet bounds, creating a worktop from a
+selection or exporting a closed assembly. Opening changes part placement, not
+stock dimensions; no front geometry is hidden or deleted by the new opening mode.
 
 ## Drawer organizers
 
@@ -488,7 +494,7 @@ python3 scripts/update_manifest.py --check
 bash scripts/build.sh
 ```
 
-Output: `dist/Kero_Cabinet_v0.17.0.rbz`.
+Output: `dist/Kero_Cabinet_v0.17.1.rbz`.
 
 CI checks text, Ruby syntax, 27 geometry configurations, and archive integrity on pushes and pull requests. Successful runs upload the installation package.
 

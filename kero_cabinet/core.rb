@@ -1,5 +1,5 @@
 # frozen_string_literal: true
-# Kero Cabinet v0.17.0, SketchUp 2020+; all design inputs use millimetres.
+# Kero Cabinet v0.17.1, SketchUp 2020+; all design inputs use millimetres.
 require 'sketchup.rb'
 require 'json'
 require_relative 'updater'
@@ -9,7 +9,7 @@ module KeroCabinet
 
   %i[DICT VERSION DEFAULT DRAWER_SLIDES].each { |name| remove_const(name) if const_defined?(name, false) }
   DICT = 'kero_cabinet'.freeze
-  VERSION = '0.17.0'.freeze
+  VERSION = '0.17.1'.freeze
 
   DEFAULT = {
     'name' => 'Parametric Cabinet',
@@ -1198,9 +1198,9 @@ module KeroCabinet
         prefix=sections.length==1 ? "Bay #{i+1}" : "Bay #{i+1} section #{s+1}"
         label=sections.length==1 ? "Bay #{i+1}" : "Bay #{i+1} / #{s.zero? ? 'bottom' : s==sections.length-1 ? 'top' : "section #{s+1}"}"
         if section['kind']=='door'
-          groups << { 'label'=>"#{label} - doors",'fronts'=>(1..section['doors']).map { |j| "#{prefix} door #{j}" } }
+          groups << { 'label'=>"#{label} - doors",'kind'=>'door','fronts'=>(1..section['doors']).map { |j| "#{prefix} door #{j}" } }
         elsif section['kind']=='drawer'
-          section['drawers'].times { |j| groups << { 'label'=>"#{label} - drawer #{j+1}#{j.zero? ? ' (bottom)' : ''}",'fronts'=>["#{prefix} drawer front #{j+1}"] } }
+          section['drawers'].times { |j| groups << { 'label'=>"#{label} - drawer #{j+1}#{j.zero? ? ' (bottom)' : ''}",'kind'=>'drawer','tag'=>"#{prefix} drawer #{j+1}",'fronts'=>["#{prefix} drawer front #{j+1}"] } }
         end
       end
     end
@@ -1208,26 +1208,68 @@ module KeroCabinet
   end
 
   def interior_hidden_fronts(definition)
-    raw=definition.get_attribute(DICT,'interior_hidden_fronts')
+    raw=definition.get_attribute(DICT,'interior_open_fronts')
+    raw=definition.get_attribute(DICT,'interior_hidden_fronts') unless raw.is_a?(String)
     value=raw.is_a?(String) ? JSON.parse(raw) : []
     value.is_a?(Array) ? value.grep(String) : []
   rescue JSON::ParserError
     []
   end
 
+  # Always rebuild the pose from the saved closed transform, never from the last pose.
   def apply_interior_visibility(instance)
-    hidden=interior_hidden_fronts(instance.definition)
-    names=interior_groups(instance).flat_map { |group| group['fronts'] }
-    instance.definition.entities.grep(Sketchup::ComponentInstance).each do |part|
-      part.hidden=hidden.include?(part.name) if names.include?(part.name)
+    opened=interior_hidden_fronts(instance.definition)
+    groups=interior_groups(instance)
+    parts=instance.definition.entities.grep(Sketchup::ComponentInstance)
+    names=groups.flat_map { |group| group['fronts'] }
+    moving=parts.select { |part| interior_member?(part.name,groups) }
+    moving.each do |part|
+      closed=part.get_attribute(DICT,'closed_transform')
+      unless closed.is_a?(Array) && closed.length==16
+        closed=part.transformation.to_a
+        part.set_attribute(DICT,'closed_transform',closed)
+      end
+      part.transformation=Geom::Transformation.new(closed)
+      part.hidden=false if names.include?(part.name)
     end
-    instance.definition.set_attribute(DICT,'interior_hidden_fronts',JSON.generate(hidden & names))
+    groups.each do |group|
+      next unless group['fronts'].all? { |name| opened.include?(name) }
+      if group['kind']=='drawer'
+        side=parts.find { |part| part.name=="#{group['tag']} left side" }
+        next unless side
+        low,high=interior_bounds(side)
+        shift=Geom::Transformation.new([0,-(high[1]-low[1])*0.9,0])
+        parts.select { |part| part.name==group['fronts'].first || part.name.start_with?("#{group['tag']} ") }.each do |part|
+          part.transformation=shift*part.transformation
+        end
+      else
+        group['fronts'].each_with_index do |name,index|
+          door=parts.find { |part| part.name==name }
+          next unless door
+          low,high=interior_bounds(door)
+          right=group['fronts'].length>1 && index==group['fronts'].length-1
+          pivot=[right ? high[0] : low[0],high[1],low[2]]
+          swing=Geom::Transformation.rotation(pivot,Z_AXIS,(right ? 1 : -1)*Math::PI/2)
+          door.transformation=swing*door.transformation
+        end
+      end
+    end
+    instance.definition.set_attribute(DICT,'interior_open_fronts',JSON.generate(opened & names))
+    instance.definition.set_attribute(DICT,'interior_hidden_fronts','[]')
+  end
+
+  def interior_bounds(part)
+    [part.bounds.min.to_a,part.bounds.max.to_a]
+  end
+
+  def interior_member?(name,groups)
+    groups.any? { |group| group['fronts'].include?(name) || (group['kind']=='drawer' && name.start_with?("#{group['tag']} ")) }
   end
 
   def set_interior_visibility(instance,index,show)
     raise ArgumentError, 'The cabinet is no longer available.' unless instance && instance.valid?
     groups=interior_groups(instance)
-    unless index=='all' || (index.is_a?(Integer) && index>=0 && index<groups.length)
+    unless %w[all refresh].include?(index) || (index.is_a?(Integer) && index>=0 && index<groups.length)
       raise ArgumentError, 'Select an available cabinet section.'
     end
     model=Sketchup.active_model
@@ -1235,9 +1277,9 @@ module KeroCabinet
     begin
       instance.make_unique unless linked_cabinet?(instance)
       hidden=interior_hidden_fronts(instance.definition)
-      names=index=='all' ? groups.flat_map { |group| group['fronts'] } : groups[index]['fronts']
+      names=index=='refresh' ? [] : index=='all' ? groups.flat_map { |group| group['fronts'] } : groups[index]['fronts']
       hidden=show ? hidden|names : hidden-names
-      instance.definition.set_attribute(DICT,'interior_hidden_fronts',JSON.generate(hidden))
+      instance.definition.set_attribute(DICT,'interior_open_fronts',JSON.generate(hidden))
       apply_interior_visibility(instance)
       model.commit_operation
     rescue StandardError
@@ -1251,12 +1293,12 @@ module KeroCabinet
     <<~HTML
       <!doctype html><html lang="en"><head><meta charset="utf-8"><style>
       body{font:14px -apple-system,BlinkMacSystemFont,Arial,sans-serif;color:#253b30;background:#f5f6f1;padding:18px}h1{font-size:19px}p{font-size:12px;line-height:1.5;color:#66705e}.row{display:flex;gap:12px;align-items:center;background:white;border:1px solid #dce2d5;padding:14px;margin:8px 0;border-radius:8px}.row input{width:18px;height:18px}button{padding:10px;border:1px solid #bac8b2;border-radius:6px;background:white;color:#355e40;cursor:pointer}#error{color:#ae3429}
-      </style></head><body><h1>Interior view</h1><p>Show the interior of individual sections. Fronts are hidden; boxes, shelves and organizers stay in place. Changes appear immediately and can be undone. This panel uses the saved cabinet layout; apply pending parameter edits first.</p>
-      <p>#{linked ? 'Linked copies share this view state.' : 'This view applies only to the selected cabinet.'} Use Show all fronts before CutList or exports that exclude hidden objects.</p>
-      <button onclick="setAll(true)">Show all interiors</button> <button onclick="setAll(false)">Show all fronts</button><div id="groups"></div><p id="error"></p>
+      </style></head><body><h1>Interior view</h1><p>Open individual sections. Drawers slide forward with their fronts, boxes and organizers. Doors swing 90 degrees from their outer hinge edges. Changes appear immediately and can be undone. This panel uses the saved cabinet layout; apply pending parameter edits first.</p>
+      <p>#{linked ? 'Linked copies share this view state.' : 'This view applies only to the selected cabinet.'} Close all before measuring overall cabinet bounds or exporting the assembled model. Drawer travel is a preview at 90% of box depth; actual hardware stroke and hinge clearance are not simulated.</p>
+      <button onclick="setAll(true)">Open all</button> <button onclick="setAll(false)">Close all</button><div id="groups"></div><p id="error"></p>
       <script>
       const initial=#{initial};
-      function renderInterior(state){document.getElementById('groups').innerHTML=state.groups.map((g,i)=>'<label class="row"><input type="checkbox" '+(g.fronts.every(n=>state.hidden.includes(n))?'checked':'')+' onchange="setInterior('+i+',this.checked)"><span>'+g.label+'<br><small>Show interior</small></span></label>').join('')||'<p>This cabinet has no doors or drawer fronts.</p>';}
+      function renderInterior(state){document.getElementById('groups').innerHTML=state.groups.map((g,i)=>'<label class="row"><input type="checkbox" '+(g.fronts.every(n=>state.hidden.includes(n))?'checked':'')+' onchange="setInterior('+i+',this.checked)"><span>'+g.label+'<br><small>Open</small></span></label>').join('')||'<p>This cabinet has no doors or drawer fronts.</p>';}
       function setInterior(index,show){window.sketchup.interior(JSON.stringify({index,show}));}
       function setAll(show){setInterior('all',show);}
       function interiorError(message){document.getElementById('error').textContent=message;}
@@ -1268,6 +1310,9 @@ module KeroCabinet
   def show_interior_view(instance=nil)
     instance ||= selected_cabinet
     return UI.messagebox('Select a Kero Cabinet component first.') unless instance && instance.valid?
+    if !instance.definition.get_attribute(DICT,'interior_open_fronts').is_a?(String) && !interior_hidden_fronts(instance.definition).empty?
+      set_interior_visibility(instance,'refresh',false)
+    end
     dialog=UI::HtmlDialog.new(dialog_title:'Kero Cabinet | Interior view',preferences_key:'KeroCabinet.InteriorView',scrollable:true,resizable:true,width:430,height:580,style:UI::HtmlDialog::STYLE_DIALOG)
     dialog.set_html(interior_view_html(interior_groups(instance),interior_hidden_fronts(instance.definition),linked_cabinet?(instance)))
     dialog.add_action_callback('interior') do |_context,raw|
@@ -1329,7 +1374,7 @@ module KeroCabinet
       </style>
       </head>
       <body>
-      <header class="editor-header"><div><h1>Kero Cabinet</h1><p>Design your cabinet. Fine-tune only what you need.</p></div><span class="version-tag">v0.17.0 &middot; mm</span></header>
+      <header class="editor-header"><div><h1>Kero Cabinet</h1><p>Design your cabinet. Fine-tune only what you need.</p></div><span class="version-tag">v0.17.1 &middot; mm</span></header>
       <p id="linked-notice" class="linked-notice" hidden></p>
       <nav class="editor-tabs" role="tablist" aria-label="Cabinet settings">
         <button id="tab-size" type="button" role="tab" data-tab="size" aria-controls="panel-size" aria-selected="true" onclick="showTab('size')">Size &amp; fronts</button>

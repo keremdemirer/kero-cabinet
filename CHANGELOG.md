@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.17.1 - 2026-10-29
+- Replace hidden-front inspection with physical opening poses: slide complete drawer assemblies forward and swing doors outward.
+- Move divider panels and Gridfinity previews with their drawer, using a 90% box-depth preview stroke and 90-degree door swings.
+- Restore saved closed transforms exactly, avoiding cumulative drift across repeated toggles and regeneration.
+- Convert legacy hidden-front states, preserve linked-family behavior and isolate ordinary copies with pose metadata intact.
+- Rename switches to Open and actions to Open all / Close all; document approximate hardware travel and clearance limits.
+
 ## v0.17.0 - 2026-10-29
 - Add a live Interior view panel with per-door-section and per-drawer Show interior switches.
 - Hide selected fronts without moving or deleting geometry; include Show all interiors and Show all fronts actions.

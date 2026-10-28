@@ -57,6 +57,8 @@ module LinkedMock
         copied = replacement.entities.add_instance(part.definition,part.transformation)
         copied.name = part.name
         copied.material = part.material
+        copied.hidden = part.hidden
+        part.instance_variable_get(:@attributes)&.each { |(dict,key),value| copied.set_attribute(dict,key,value) }
       end
       old.instances.delete(self)
       @definition = replacement

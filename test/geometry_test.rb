@@ -12,17 +12,24 @@ module Geom
   class Transformation
     attr_reader :origin, :scale
     def initialize(origin = [0,0,0], scale = [1,1,1])
-      @origin, @scale = origin, scale
+      @matrix=origin.length==16 ? origin.dup : [scale[0],0,0,0,0,scale[1],0,0,0,0,scale[2],0,*origin,1]
+      @origin=@matrix[12,3]
+      diagonal=[1,2,4,6,8,9].all? { |i| @matrix[i].abs<1e-10 }
+      @scale=3.times.map { |axis| diagonal ? @matrix[axis*5] : Math.sqrt(3.times.sum { |row| @matrix[axis*4+row]**2 }) }
     end
-    def self.scaling(x, y, z)
-      new([0,0,0], [x,y,z])
+    def self.scaling(x,y,z); new([0,0,0],[x,y,z]); end
+    def self.rotation(pivot,_axis,angle)
+      c,s=Math.cos(angle),Math.sin(angle)
+      new(pivot)*new([c,s,0,0,-s,c,0,0,0,0,1,0,0,0,0,1])*new(pivot.map { |v| -v })
     end
     def *(other)
-      self.class.new(@origin.zip(other.origin, @scale).map { |a,b,scale| a+b*scale }, @scale.zip(other.scale).map { |a,b| a*b })
+      a,b=@matrix,other.to_a
+      self.class.new(16.times.map { |index| row=index%4;col=index/4;4.times.sum { |k| a[k*4+row]*b[col*4+k] } })
     end
-    def to_a
-      [@scale[0],0,0,0, 0,@scale[1],0,0, 0,0,@scale[2],0, *@origin,1]
+    def point(point)
+      3.times.map { |row| @matrix[12+row]+3.times.sum { |col| @matrix[col*4+row]*point[col] } }
     end
+    def to_a; @matrix.dup; end
   end
 end
 module Sketchup
@@ -117,16 +124,23 @@ class MockInstance
     (@attributes ||= {})[[dict,key]] = value
   end
   attr_accessor :name, :material, :hidden
-  attr_reader :definition, :transformation
+  attr_reader :definition
+  attr_accessor :transformation
   def initialize(definition, transformation)
     @definition = definition
     @transformation = transformation
   end
+  def get_attribute(dict,key); (@attributes||{})[[dict,key]]; end
+  def bounds
+    low,high=bounds_mm
+    Struct.new(:min,:max).new(low.map { |v| v/25.4 },high.map { |v| v/25.4 })
+  end
   def bounds_mm
     low = @definition.mesh_min || [0,0,0]
     high = @definition.mesh_max || [@definition.points.map { |p| p[0] }.max, @definition.points.map { |p| p[1] }.max, @definition.extrusion]
-    minimum = 3.times.map { |axis| (@transformation.origin[axis] + low[axis]*@transformation.scale[axis])*25.4 }
-    maximum = 3.times.map { |axis| (@transformation.origin[axis] + high[axis]*@transformation.scale[axis])*25.4 }
+    corners=[low[0],high[0]].product([low[1],high[1]],[low[2],high[2]]).map { |point| @transformation.point(point) }
+    minimum=3.times.map { |axis| corners.map { |p| p[axis]*25.4 }.min }
+    maximum=3.times.map { |axis| corners.map { |p| p[axis]*25.4 }.max }
     [minimum,maximum]
   end
 end
