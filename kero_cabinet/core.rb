@@ -1,5 +1,5 @@
 # frozen_string_literal: true
-# Kero Cabinet v0.8.0, SketchUp 2020+; all design inputs use millimetres.
+# Kero Cabinet v0.8.1, SketchUp 2020+; all design inputs use millimetres.
 require 'sketchup.rb'
 require 'json'
 require_relative 'updater'
@@ -8,7 +8,7 @@ module KeroCabinet
   extend self
 
   DICT = 'kero_cabinet'.freeze
-  VERSION = '0.8.0'.freeze
+  VERSION = '0.8.1'.freeze
 
   DEFAULT = {
     'name' => 'Parametric Cabinet',
@@ -24,7 +24,8 @@ module KeroCabinet
     'drawer_thickness' => 12,
     'drawer_bottom' => 12,
     'drawer_slide' => 'side_48',
-    'undermount_length' => 457,
+    'undermount_length' => 0,
+    'drawer_rear_gap' => 10,
     'back' => 6,
     'front' => 18,
     'toe' => 100,
@@ -138,6 +139,17 @@ module KeroCabinet
     c['drawer_slide'] == 'undermount_563h' ? 20 : 8
   end
 
+  def tandem_rear_allowance(length)
+    length == 229 ? 37 : 24
+  end
+
+  def tandem_length(available, selected)
+    return selected unless selected == 0
+    length = [533, 457, 381, 305, 229].find { |size| size + tandem_rear_allowance(size) <= available + 0.001 }
+    raise ArgumentError, 'No supported TANDEM length fits this depth. Increase cabinet depth or use Side mount.' unless length
+    length
+  end
+
   def overlay_projection(c)
     return 0 unless c['style'] == 'overlay' && c['bays'].is_a?(Array)
     fronts = c['bays'].any? do |bay|
@@ -161,7 +173,7 @@ module KeroCabinet
     {
       'width' => [300, 5000], 'height' => [350, 3500], 'depth' => [250, 1200],
       'rail_width' => [40, 200], 'drawer_thickness' => [6, 30],
-      'drawer_bottom' => [3, 24], 'panel' => [9, 36], 'back' => [3, 24], 'front' => [9, 32],
+      'drawer_rear_gap' => [3, 50], 'drawer_bottom' => [3, 24], 'panel' => [9, 36], 'back' => [3, 24], 'front' => [9, 32],
       'toe' => [0, 250], 'timber_height' => [20, 200],
       'timber_thickness' => [10, 100], 'frame_width' => [25, 90],
       'frame_depth' => [12, 36], 'gap' => [1, 6]
@@ -173,9 +185,9 @@ module KeroCabinet
       if c['drawer_thickness'] < 12 || c['drawer_thickness'] > 16
         raise ArgumentError, 'The TANDEM 563H reference supports 12-16 mm drawer sides. Change Drawer box thickness or select Side mount.'
       end
-      integer_between!(c, 'undermount_length', 229, 533)
-      unless [229, 305, 381, 457, 533].include?(c['undermount_length'])
-        raise ArgumentError, 'Choose an available TANDEM drawer length: 229, 305, 381, 457, or 533 mm.'
+      integer_between!(c, 'undermount_length', 0, 533)
+      unless [0, 229, 305, 381, 457, 533].include?(c['undermount_length'])
+        raise ArgumentError, 'Choose Auto or an available TANDEM drawer length: 229, 305, 381, 457, or 533 mm.'
       end
     end
     c['construction'] = c['construction'].to_s
@@ -479,9 +491,10 @@ module KeroCabinet
           runner_width = undermount && face_frame ? opening_right - opening_left : cavity_width
           dbx = runner_left + side_clearance
           dbw = runner_width - 2*side_clearance
-          dby = [fd + 18, front_y + ft + g].max
-          dbd = undermount ? c['undermount_length'] : rear_inside - 25 - dby
-          rear_allowance = undermount ? (dbd == 229 ? 37 : 24) : 25
+          dby = undermount ? [fd + 3, front_y + ft + 3].max : [fd, front_y + ft + [g, 3.2].max].max
+          available_depth = rear_inside - dby
+          dbd = undermount ? tandem_length(available_depth, c['undermount_length']) : available_depth - c['drawer_rear_gap']
+          rear_allowance = undermount ? tandem_rear_allowance(dbd) : c['drawer_rear_gap']
           if undermount && rear_inside - dby < dbd + rear_allowance
             raise ArgumentError, "#{section_name}: the #{dbd} mm TANDEM drawer needs at least #{dbd+rear_allowance} mm behind the box front. Select a shorter length or increase depth."
           end
@@ -646,7 +659,7 @@ module KeroCabinet
       </style>
       </head>
       <body>
-      <header><h1>Kero Cabinet</h1><p>Parametric SketchUp cabinet builder - v0.8.0</p></header>
+      <header><h1>Kero Cabinet</h1><p>Parametric SketchUp cabinet builder - v0.8.1</p></header>
       <main>
         <section class="section">
           <h2>Case dimensions</h2>
@@ -728,7 +741,9 @@ module KeroCabinet
         <section class="section">
           <h2>Drawer construction</h2>
           <div style="margin-bottom:12px"><label for="drawer_slide">Drawer hardware</label><select id="drawer_slide" onchange="updateDrawerHardware()"><optgroup label="Side mount"><option value="side_48">Side mount - Easy-close / 47.7 mm min. box</option><option value="side_35">Side mount - Low-profile / 35.1 mm min. box</option></optgroup><optgroup label="Undermount"><option value="undermount_563h">Undermount - Blum TANDEM 563H reference</option></optgroup></select></div>
-          <div style="margin-bottom:12px"><label for="undermount_length">Undermount drawer length (mm)</label><select id="undermount_length"><option>229</option><option>305</option><option>381</option><option>457</option><option>533</option></select></div>
+          <div style="margin-bottom:12px"><label for="undermount_length">Undermount drawer length (mm)</label><select id="undermount_length"><option value="0">Auto - longest fitting</option><option>229</option><option>305</option><option>381</option><option>457</option><option>533</option></select></div>
+          <div style="margin-bottom:12px"><label for="drawer_rear_gap">Side-mount rear clearance (mm)</label><input id="drawer_rear_gap" type="number" min="3" max="50" step="1"></div>
+          <p class="hint">Auto chooses the longest supported TANDEM length that fits. This reference supports up to 533 mm, so deeper cabinets can retain unused rear space. Saved manual lengths stay fixed; select Auto to recalculate.</p>
           <p id="hardware_hint" class="hint"></p>
           <div class="grid two">
             <div><label for="drawer_thickness">Drawer box thickness (mm)</label><input id="drawer_thickness" type="number" min="6" max="30"></div>
@@ -747,7 +762,7 @@ module KeroCabinet
       <script>
         const initial = /* INITIAL_CONFIG */ null;
         let bays = JSON.parse(JSON.stringify(initial.bays));
-        const ids = ['name','width','height','depth','panel','back','front','toe','gap','style','frame_width','frame_depth','timber_height','timber_thickness','top_construction','bottom_construction','back_construction','rail_width','drawer_thickness','drawer_bottom','drawer_slide','undermount_length'];
+        const ids = ['name','width','height','depth','panel','back','front','toe','gap','style','frame_width','frame_depth','timber_height','timber_thickness','top_construction','bottom_construction','back_construction','rail_width','drawer_thickness','drawer_bottom','drawer_slide','undermount_length','drawer_rear_gap'];
         for (const id of ids) document.getElementById(id).value = initial[id];
         document.getElementById('frame').checked = !!initial.frame;
         document.getElementById('toe_frame').checked = !!initial.toe_frame;
@@ -764,6 +779,7 @@ module KeroCabinet
         function updateDrawerHardware(){
           const under=document.getElementById('drawer_slide').value==='undermount_563h';
           document.getElementById('undermount_length').disabled=!under;
+          document.getElementById('drawer_rear_gap').disabled=under;
           document.getElementById('hardware_hint').textContent=under?'TANDEM reference: 12-16 mm sides; inside width = opening minus 42 mm; 13 mm recessed bottom; 14 mm below and 6 mm above the box. Front/back members are raised to leave the underside open. Hook holes, exact rear notches, locking devices and hardware models are not generated; prepare them using the manufacturer template.':'Side-mount height and side-space references. Kero Cabinet reserves 4 mm above and below the box. Check actual length, width limits, mounting and holes against the hardware datasheet.';
         }
         function updateFrame(){
@@ -822,7 +838,7 @@ module KeroCabinet
             ${bays.length>1?`<div class="bay-width"><label>Width ratio</label><input type="number" aria-label="Bay width ratio" required min="0.2" max="10" step="0.1" value="${escapeHtml(b.weight)}" onchange="changeBay(${i},'weight',this.value);refreshLayout()"><span>Equal values give equal widths.</span></div>`:''}
             ${b.kind==='stack'?renderSections(b,i):`<div class="stack-grid">${counts(b,`changeBay(${i},'KEY',this.value)`)}</div><p class="hint">Need drawers below doors? Choose Mixed layout above.</p>`}</div>`).join('');
         }
-        const limits={width:[300,5000],height:[350,3500],depth:[250,1200],panel:[9,36],back:[3,24],front:[9,32],toe:[0,250],timber_height:[20,200],timber_thickness:[10,100],frame_width:[25,90],frame_depth:[12,36],gap:[1,6],rail_width:[40,200],drawer_thickness:[6,30],drawer_bottom:[3,24]};
+        const limits={drawer_rear_gap:[3,50],width:[300,5000],height:[350,3500],depth:[250,1200],panel:[9,36],back:[3,24],front:[9,32],toe:[0,250],timber_height:[20,200],timber_thickness:[10,100],frame_width:[25,90],frame_depth:[12,36],gap:[1,6],rail_width:[40,200],drawer_thickness:[6,30],drawer_bottom:[3,24]};
         for(const [id,[min,max]] of Object.entries(limits)){const input=document.getElementById(id);input.min=min;input.max=max;input.required=true;input.title=`Allowed range: ${min}-${max} mm`;}
         document.addEventListener('wheel',event=>{if(document.activeElement?.type==='number')document.activeElement.blur();},{passive:true});
         function showError(message){ document.getElementById('error').textContent=message; }

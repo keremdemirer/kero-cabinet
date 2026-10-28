@@ -2,7 +2,7 @@
 
 **A parametric cabinet builder for SketchUp.** Enter dimensions and a bay layout to create an editable cabinet component.
 
-Version: **v0.8.0 (early development)**. The original project reports use in SketchUp 2025. Automated tests use a mock SketchUp API; they are not runtime integration tests.
+Version: **v0.8.1 (early development)**. The original project reports use in SketchUp 2025. Automated tests use a mock SketchUp API; they are not runtime integration tests.
 
 ## Features
 
@@ -22,14 +22,14 @@ The plugin does not generate cut lists. Separate part components are intended fo
 
 1. Download the RBZ from the `kero-cabinet-rbz` artifact of a successful GitHub Actions run, or build it locally.
 2. In SketchUp, open **Extensions > Extension Manager > Install Extension**.
-3. Select `Kero_Cabinet_v0.8.0.rbz` and restart SketchUp.
+3. Select `Kero_Cabinet_v0.8.1.rbz` and restart SketchUp.
 4. Choose **Extensions > Kero Cabinet > Create new cabinet...**.
 
 To edit a cabinet, select its component and choose **Kero Cabinet | Edit parameters** from the context menu, or **Edit selected cabinet...** from the extension menu.
 
 ## Updates from GitHub
 
-Install v0.8.0 once using the RBZ. Future releases can be installed from
+Install v0.8.1 once using the RBZ. Future releases can be installed from
 **Extensions > Kero Cabinet > Check for updates...**, without downloading or
 installing another RBZ manually. Save your work and restart SketchUp after an update.
 
@@ -59,7 +59,7 @@ Internal shelves behind inset doors start behind the door back with the configur
 ### Update connection troubleshooting
 
 Internet access in a browser does not prove that SketchUp can reach GitHub.
-From v0.8.0 the updater uses SketchUp's native HTTP transport and reports the
+From v0.8.1 the updater uses SketchUp's native HTTP transport and reports the
 actual failure category. Check application firewall/proxy/VPN settings when
 SketchUp cannot reach `api.github.com`. Certificate checks are never disabled.
 If an older updater cannot download this fix, install the current RBZ once via
@@ -154,7 +154,7 @@ side-mount profile unless changed.
 - Reserve **14 mm below and 6 mm above** the box. Minimum box height is computed
   as recess + bottom thickness + 10 mm usable interior; it is a plugin allowance,
   not a published minimum drawer height.
-- Drawer length choices: **229, 305, 381, 457, 533 mm**, default 457. Check enough
+- Drawer length choices: **229, 305, 381, 457, 533 mm**, default **Auto - longest fitting**. Saved manual choices remain fixed. Check enough
   depth remains behind the placed box front: length + 24 mm, or +37 mm for 229.
   This is a conservative depth fit check; bracket ranges require product review.
 
@@ -223,7 +223,7 @@ python3 scripts/update_manifest.py --check
 bash scripts/build.sh
 ```
 
-Output: `dist/Kero_Cabinet_v0.8.0.rbz`.
+Output: `dist/Kero_Cabinet_v0.8.1.rbz`.
 
 CI checks text, Ruby syntax, 27 geometry configurations, and archive integrity on pushes and pull requests. Successful runs upload the installation package.
 
@@ -244,4 +244,15 @@ Stored configuration keys and enum values remain compatible. Existing user-enter
 
 No license has been selected. No new license is added by this translation.
 
-From v0.8.0, overlay front thickness is also included in the saved depth value. Regenerating an older overlay cabinet with the same input shortens the case by the front thickness. Increase the input by the front thickness only if you want to preserve the old physical depth.
+From v0.8.1, overlay front thickness is also included in the saved depth value. Regenerating an older overlay cabinet with the same input shortens the case by the front thickness. Increase the input by the front thickness only if you want to preserve the old physical depth.
+
+### Drawer depth fitting (v0.8.1)
+
+Undermount Auto selects the longest supported nominal length fitting the available
+space, retaining required rear allowance. Supported lengths currently stop at
+533 mm; a deeper cabinet can therefore retain unused space. Select Auto on older
+cabinets whose saved length is fixed at 457 mm or another manual value.
+Side-mount boxes use available depth minus the adjustable Side-mount rear
+clearance (3-50 mm, default 10). Front setback now reserves the actual front and
+mounting clearance rather than an unconditional extra 18 mm. Exact commercial
+slide lengths, brackets and mounting details still need product-specific review.

@@ -39,6 +39,31 @@ class UndermountTest < Minitest::Test
     assert_includes error.message, 'shorter length'
   end
 
+  def test_auto_uses_longest_supported_fitting_length
+    [266, 328, 405, 481, 557, 800].each do |available|
+      size = KeroCabinet.tandem_length(available, 0)
+      assert_operator size + KeroCabinet.tandem_rear_allowance(size), :<=, available
+      [229, 305, 381, 457, 533].select { |other| other > size }.each do |larger|
+        assert_operator larger + KeroCabinet.tandem_rear_allowance(larger), :>, available
+      end
+    end
+    assert_equal 457, KeroCabinet.tandem_length(800, 457)
+    assert_raises(ArgumentError) { KeroCabinet.tandem_length(200, 0) }
+    _, parts = build('undermount_length' => 0)
+    a, b = parts.fetch('Bay 1 drawer 1 left side').bounds_mm
+    assert_in_delta 533, b[1] - a[1], 0.001
+  end
+
+  def test_side_mount_uses_selected_rear_gap
+    [3, 10, 25].each do |gap|
+      c, parts = build('drawer_slide' => 'side_35', 'drawer_rear_gap' => gap)
+      rear = KeroCabinet.case_depth(c)
+      a, b = parts.fetch('Bay 1 drawer 1 left side').bounds_mm
+      assert_in_delta gap, rear - b[1], 0.001
+      assert_operator a[1], :>=, parts.fetch('Bay 1 drawer front 1').bounds_mm[1][1]
+    end
+  end
+
   def test_side_mount_is_preserved
     _, parts = build('drawer_slide' => 'side_35', 'drawer_thickness' => 18)
     left = parts.fetch('Bay 1 drawer 1 left side').bounds_mm

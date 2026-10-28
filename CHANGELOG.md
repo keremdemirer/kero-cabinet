@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.8.1 - 2026-10-28
+- Add Auto - longest fitting nominal undermount length while preserving saved manual lengths.
+- Replace fixed side-mount rear allowance with adjustable 3-50 mm clearance, default 10 mm.
+- Remove unnecessary fixed front setback and preserve required front clearance.
+- Test longest-fit selection, manual overrides and rear-clearance dimensions.
+
 ## v0.8.0 - 2026-10-28
 - Separate side-mount and undermount hardware choices and add a Blum TANDEM 563H geometry reference.
 - Compute inner box width from opening minus 42 mm, recess the bottom 13 mm, and reserve 14/6 mm lower/upper clearance.
