@@ -1,5 +1,5 @@
 # frozen_string_literal: true
-# Kero Cabinet v0.6.4, SketchUp 2020+; all design inputs use millimetres.
+# Kero Cabinet v0.7.0, SketchUp 2020+; all design inputs use millimetres.
 require 'sketchup.rb'
 require 'json'
 require_relative 'updater'
@@ -8,7 +8,7 @@ module KeroCabinet
   extend self
 
   DICT = 'kero_cabinet'.freeze
-  VERSION = '0.6.4'.freeze
+  VERSION = '0.7.0'.freeze
 
   DEFAULT = {
     'name' => 'Parametric Cabinet',
@@ -23,6 +23,7 @@ module KeroCabinet
     'rail_width' => 100,
     'drawer_thickness' => 12,
     'drawer_bottom' => 12,
+    'drawer_slide' => 'side_48',
     'back' => 6,
     'front' => 18,
     'toe' => 100,
@@ -119,6 +120,17 @@ module KeroCabinet
     raise ArgumentError, e.message.include?(field_label(key)) ? e.message : "#{field_label(key)}: enter a valid integer."
   end
 
+  # Manufacturer minimum drawer height, not just the metal slide height.
+  # Clearances above/below the box are Kero Cabinet allowances, not quoted specs.
+  DRAWER_SLIDES = {
+    'side_35' => { name: 'Low-profile side mount (2132C reference)', minimum: 35.1, side: 13.0 },
+    'side_48' => { name: 'Easy-close side mount (3832EC reference)', minimum: 47.7, side: 13.5 }
+  }.freeze
+
+  def drawer_minimum(c)
+    [DRAWER_SLIDES.fetch(c['drawer_slide'])[:minimum], c['drawer_bottom'] + 10.0].max
+  end
+
   def overlay_projection(c)
     return 0 unless c['style'] == 'overlay' && c['bays'].is_a?(Array)
     fronts = c['bays'].any? do |bay|
@@ -147,6 +159,9 @@ module KeroCabinet
       'timber_thickness' => [10, 100], 'frame_width' => [25, 90],
       'frame_depth' => [12, 36], 'gap' => [1, 6]
     }.each { |key, (low, high)| number_between!(c, key, low, high) }
+    unless DRAWER_SLIDES.key?(c['drawer_slide'])
+      raise ArgumentError, 'Select a supported side-mount drawer slide profile.'
+    end
     c['construction'] = c['construction'].to_s
     unless %w[sides_full top_bottom_full].include?(c['construction'])
       raise ArgumentError, 'Construction must use full-height sides or full-width top and bottom panels.'
@@ -376,7 +391,7 @@ module KeroCabinet
       end
       front_width = front_right - front_left
       front_height = front_top - front_bottom
-      raise ArgumentError, "Bay #{i+1}: available opening is too small." if front_width < 60 || front_height < 100
+      raise ArgumentError, "Bay #{i+1}: available opening is too small." if front_width < 60 || front_height < (bay['kind'] == 'drawer' ? drawer_minimum(c) + 8 : 100)
 
       sections = bay['kind'] == 'stack' ? bay['sections'] : [bay]
       total_weight = sections.sum { |section| section['weight'] }
@@ -396,8 +411,10 @@ module KeroCabinet
         front_bottom = section_index.zero? ? outer_front_bottom : lower + front_margin
         front_top = section_index == sections.length-1 ? outer_front_top : upper - front_margin
         front_height = front_top - front_bottom
-        if front_height < 100 || cavity_top - cavity_bottom < 100
-          raise ArgumentError, "#{section_name}: section is too short. Increase its height weight or the cabinet height."
+        minimum_section = section['kind'] == 'drawer' ? drawer_minimum(c) + 8 : 100
+        if front_height < minimum_section || cavity_top - cavity_bottom < minimum_section
+          label = sections.length == 1 ? section_name : "Bay #{i+1}, #{section_index == sections.length-1 ? 'top' : section_index.zero? ? 'bottom' : 'middle'} section"
+          raise ArgumentError, "#{label}: available front #{front_height.round(1)} mm, internal opening #{(cavity_top-cavity_bottom).round(1)} mm. Need at least #{minimum_section.round(1)} mm for the selected contents/slide. Increase this section's height ratio or select a lower-profile slide."
         end
         if section_index > 0
           add.call("Bay #{i+1} horizontal divider #{section_index}", 'Case',
@@ -428,24 +445,27 @@ module KeroCabinet
       when 'drawer'
         count = section['drawers']
         cell = (front_height - (count-1)*g)/count
-        raise ArgumentError, "#{section_name}: drawer height is too small." if cell < 85
+        required_box = drawer_minimum(c)
+        if cell < required_box + 8
+          raise ArgumentError, "#{section_name}: each drawer front has #{cell.round(1)} mm; this slide and stock need at least #{(required_box+8).round(1)} mm. Reduce drawer count or increase the section height."
+        end
         count.times do |j|
           z_front = front_bottom + j*(cell+g)
           add.call("#{section_name} drawer front #{j+1}", 'Door / drawer front',
                    front_left, front_y, z_front, front_width, ft, cell)
           # Preserve outer box dimensions and runner clearances as stock changes.
-          side_clearance = 12.5
+          side_clearance = DRAWER_SLIDES.fetch(c['drawer_slide'])[:side]
           dbx = cavity_left + side_clearance
           dbw = cavity_width - 2*side_clearance
           dby = [fd + 18, front_y + ft + g].max
           dbd = rear_inside - 25 - dby
-          dbh = [125.0, cell - 25.0, cavity_top - cavity_bottom - 8].min
-          wanted_z = z_front + [12.0, (cell-dbh)/2].max
+          dbh = [125.0, cell - 8.0, cavity_top - cavity_bottom - 8].min
+          wanted_z = z_front + (cell-dbh)/2
           # Respect carcass bottom and top even when an overlay front covers the rails.
           dbz = [[wanted_z, cavity_bottom + 4].max, cavity_top - dbh - 4].min
           dt = c['drawer_thickness']
           bottom_t = c['drawer_bottom']
-          raise ArgumentError, 'Insufficient internal space for the drawer box.' if dbw < 80 || dbd < 100 || dbh < 60
+          raise ArgumentError, 'Insufficient internal space for the drawer box.' if dbw < 80 || dbd < 100 || dbh + 0.001 < required_box
           if dbw - 2*dt <= 0.25 || dbd - 2*dt <= 0.25 || dbh - bottom_t <= 0.25
             raise ArgumentError, 'Drawer stock is too thick for the available box dimensions.'
           end
@@ -599,7 +619,7 @@ module KeroCabinet
       </style>
       </head>
       <body>
-      <header><h1>Kero Cabinet</h1><p>Parametric SketchUp cabinet builder - v0.6.4</p></header>
+      <header><h1>Kero Cabinet</h1><p>Parametric SketchUp cabinet builder - v0.7.0</p></header>
       <main>
         <section class="section">
           <h2>Case dimensions</h2>
@@ -680,11 +700,13 @@ module KeroCabinet
         </section>
         <section class="section">
           <h2>Drawer construction</h2>
+          <div style="margin-bottom:12px"><label for="drawer_slide">Drawer slide profile</label><select id="drawer_slide"><option value="side_48">Easy-close side mount - 47.7 mm min. box (3832EC)</option><option value="side_35">Low-profile side mount - 35.1 mm min. box (2132C)</option></select></div>
+          <p class="hint">Height/side-space references only. Kero Cabinet reserves 4 mm above and below the box, plus at least 10 mm usable above its bottom. Actual length, width limits, mounting brackets and holes must match the hardware datasheet. Undermount runners are not covered.</p>
           <div class="grid two">
             <div><label for="drawer_thickness">Drawer box thickness (mm)</label><input id="drawer_thickness" type="number" min="6" max="30"></div>
             <div><label for="drawer_bottom">Drawer bottom thickness (mm)</label><input id="drawer_bottom" type="number" min="3" max="24"></div>
           </div>
-          <p class="hint">Box sides and front/back members share the box thickness. The bottom fits between them. Visible drawer fronts use Door/front thickness. Outer box size and runner clearances stay unchanged.</p>
+          <p class="hint">Box sides and front/back members share the box thickness. The bottom fits between them. Visible drawer fronts use Door/front thickness. Outer box width follows the selected slide side clearance. Shallow box heights adapt to the opening.</p>
         </section>
         <section class="section">
           <h2>Cabinet layout</h2>
@@ -697,7 +719,7 @@ module KeroCabinet
       <script>
         const initial = /* INITIAL_CONFIG */ null;
         let bays = JSON.parse(JSON.stringify(initial.bays));
-        const ids = ['name','width','height','depth','panel','back','front','toe','gap','style','frame_width','frame_depth','timber_height','timber_thickness','top_construction','bottom_construction','back_construction','rail_width','drawer_thickness','drawer_bottom'];
+        const ids = ['name','width','height','depth','panel','back','front','toe','gap','style','frame_width','frame_depth','timber_height','timber_thickness','top_construction','bottom_construction','back_construction','rail_width','drawer_thickness','drawer_bottom','drawer_slide'];
         for (const id of ids) document.getElementById(id).value = initial[id];
         document.getElementById('frame').checked = !!initial.frame;
         document.getElementById('toe_frame').checked = !!initial.toe_frame;
@@ -780,7 +802,7 @@ module KeroCabinet
               showError(`${label||'Number'}: enter a value from ${input.min} to ${input.max}. Current value: ${input.value||'empty'}.`);input.focus();return;
             }
           }
-          const c={}; for(const id of ids) c[id]=['name','style','top_construction','bottom_construction','back_construction'].includes(id)?document.getElementById(id).value:n(document.getElementById(id).value);
+          const c={}; for(const id of ids) c[id]=['name','style','top_construction','bottom_construction','back_construction','drawer_slide'].includes(id)?document.getElementById(id).value:n(document.getElementById(id).value);
           c.toe_frame=document.getElementById('toe_frame').checked;
           c.frame=document.getElementById('frame').checked;
           c.construction=document.querySelector('input[name=construction]:checked').value;

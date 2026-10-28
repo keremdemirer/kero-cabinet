@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.7.0 - 2026-10-28
+- Replace fixed drawer height limits with selectable side-mount height/side-space profiles referenced to Accuride 2132C and 3832EC.
+- Adapt shallow box height to front and cavity space, retaining clearance and bottom-stock checks.
+- Add available/required height diagnostics and document manufacturer figures separately from plugin allowances.
+- Test sub-60 mm boxes, differing profile minimums, stacked shallow drawers, and invalid hardware choices.
+
 ## v0.6.4 - 2026-10-28
 - Include overlay fronts within the requested overall depth and shorten the case, internal parts, and toe frame consistently.
 - Reserve no front thickness for all-open layouts, including open-only stacked sections.

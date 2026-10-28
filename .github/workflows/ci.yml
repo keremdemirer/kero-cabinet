@@ -27,6 +27,8 @@ jobs:
         run: ruby test/construction_test.rb
       - name: Stacked section tests
         run: ruby test/stack_test.rb
+      - name: Shallow drawer hardware tests
+        run: ruby test/shallow_drawer_test.rb
       - name: Updater tests
         run: ruby test/updater_test.rb
       - name: Package SketchUp RBZ
