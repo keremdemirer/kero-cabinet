@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.3.1 - 2026-10-28
+- Recess shelves behind inset doors by the front thickness plus the configured gap.
+- Keep shelf rear edges aligned with the case and preserve open-shelf depth.
+- Cover frameless and face-frame cases, including thick inset doors, in 20 geometry configurations.
+
 ## v0.3.0 - 2026-10-28
 - Add public GitHub update checks, startup preferences, verified downloads, and in-place installation with rollback on handled failures.
 - Add updater regression tests and a release manifest checked by CI.

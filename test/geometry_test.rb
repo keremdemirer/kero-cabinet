@@ -118,7 +118,7 @@ def near(actual, expected, msg)
   raise "#{msg}: expected #{expected}, actual #{actual}" unless (actual - expected).abs < 0.001
 end
 
-def run_case(construction, frame, style, bay_kinds)
+def run_case(construction, frame, style, bay_kinds, overrides = {})
   conf = KeroCabinet.clone_defaults
   conf['construction'] = construction
   conf['frame'] = frame
@@ -126,6 +126,7 @@ def run_case(construction, frame, style, bay_kinds)
   conf['bays'] = bay_kinds.map { |k|
     { 'kind' => k, 'weight' => 1, 'doors' => 2, 'drawers' => 4, 'shelves' => 2 }
   }
+  conf.merge!(overrides)
   config = KeroCabinet.validate_config(conf)
   model = MockModel.new
   Sketchup.active_model = model
@@ -180,6 +181,18 @@ def run_case(construction, frame, style, bay_kinds)
     next unless part.name.include?('shelf') || part.name.include?('Divider')
     near(part.bounds_mm[1][1], config['depth'], "#{part.name} must reach rear plane")
   end
+  parts.select { |part| part.name.include?('internal shelf') }.each do |shelf|
+    bay_number = shelf.name.split[1]
+    doors = parts.select { |part| part.name.start_with?("Bay #{bay_number} door ") }
+    doors.each do |door|
+      minimum_y = style == 'inset' ? door.bounds_mm[1][1] + config['gap'] : (frame ? config['frame_depth'] : 0)
+      expected_y = [frame ? config['frame_depth'] : 0, minimum_y].max
+      near(shelf.bounds_mm[0][1], expected_y, 'Shelf clears door back by the configured gap')
+    end
+  end
+  parts.select { |part| part.name.include?('open shelf') }.each do |shelf|
+    near(shelf.bounds_mm[0][1], frame ? config['frame_depth'] : 0, 'Open shelves retain full case depth')
+  end
   drawer_fronts = parts.select { |part| part.name =~ /drawer front/ }
   drawer_boxes = parts.select { |part| part.name =~ /drawer \d+ left side/ }
   raise 'missing drawer boxes' unless drawer_boxes.size == 4 * bay_kinds.count('drawer')
@@ -199,4 +212,10 @@ end
     end
   end
 end
-puts 'All 16 geometry configurations passed, including external back and flush top/bottom.'
+%w[sides_full top_bottom_full].each do |construction|
+  [true, false].each do |frame|
+    run_case(construction, frame, 'inset', ['door', 'open'],
+      'front' => 32, 'frame_depth' => 12, 'gap' => 6)
+  end
+end
+puts 'All 20 geometry configurations passed, including inset shelf clearance and external back alignment.' 

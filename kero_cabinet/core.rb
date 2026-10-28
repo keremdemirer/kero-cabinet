@@ -1,5 +1,5 @@
 # frozen_string_literal: true
-# Kero Cabinet v0.3.0, SketchUp 2020+; all design inputs use millimetres.
+# Kero Cabinet v0.3.1, SketchUp 2020+; all design inputs use millimetres.
 require 'sketchup.rb'
 require 'json'
 require_relative 'updater'
@@ -8,7 +8,7 @@ module KeroCabinet
   extend self
 
   DICT = 'kero_cabinet'.freeze
-  VERSION = '0.3.0'.freeze
+  VERSION = '0.3.1'.freeze
 
   DEFAULT = {
     'name' => 'Parametric Cabinet',
@@ -282,6 +282,10 @@ module KeroCabinet
 
       case bay['kind']
       when 'door'
+        # Inset doors occupy case depth. Keep shelves behind the door back,
+        # with the configured gap, while preserving their rear alignment.
+        shelf_y = c['style'] == 'inset' ? [fd, front_y + ft + g].max : fd
+        shelf_depth = d - shelf_y
         count = bay['doors']
         item_width = (front_width - (count - 1)*g) / count
         count.times do |j|
@@ -292,7 +296,7 @@ module KeroCabinet
         bay['shelves'].times do |j|
           z = cavity_bottom + (j+1)*(cavity_top - cavity_bottom)/(bay['shelves']+1.0) - t/2
           add.call("Bay #{i+1} internal shelf #{j+1}", 'Case',
-                   cavity_left, fd, z, cavity_width, depth_inside, t)
+                   cavity_left, shelf_y, z, cavity_width, shelf_depth, t)
         end
       when 'drawer'
         count = bay['drawers']
@@ -411,7 +415,7 @@ module KeroCabinet
       </style>
       </head>
       <body>
-      <header><h1>Kero Cabinet</h1><p>Parametric SketchUp cabinet builder - v0.3.0</p></header>
+      <header><h1>Kero Cabinet</h1><p>Parametric SketchUp cabinet builder - v0.3.1</p></header>
       <main>
         <section class="section">
           <h2>Case dimensions</h2>
