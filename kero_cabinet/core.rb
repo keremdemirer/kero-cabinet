@@ -1,5 +1,5 @@
 # frozen_string_literal: true
-# Kero Cabinet v0.18.0, SketchUp 2020+; all design inputs use millimetres.
+# Kero Cabinet v0.19.0, SketchUp 2020+; all design inputs use millimetres.
 require 'sketchup.rb'
 require 'json'
 require_relative 'updater'
@@ -9,7 +9,7 @@ module KeroCabinet
 
   %i[DICT VERSION DEFAULT DRAWER_SLIDES].each { |name| remove_const(name) if const_defined?(name, false) }
   DICT = 'kero_cabinet'.freeze
-  VERSION = '0.18.0'.freeze
+  VERSION = '0.19.0'.freeze
 
   DEFAULT = {
     'name' => 'Parametric Cabinet',
@@ -1493,7 +1493,7 @@ module KeroCabinet
       </style>
       </head>
       <body>
-      <header class="editor-header"><div><h1>Kero Cabinet</h1><p>Design your cabinet. Fine-tune only what you need.</p></div><span class="version-tag">v0.18.0 &middot; mm</span></header>
+      <header class="editor-header"><div><h1>Kero Cabinet</h1><p>Design your cabinet. Fine-tune only what you need.</p></div><span class="version-tag">v0.19.0 &middot; mm</span></header>
       <p id="linked-notice" class="linked-notice" hidden></p>
       <nav class="editor-tabs" role="tablist" aria-label="Cabinet settings">
         <button id="tab-size" type="button" role="tab" data-tab="size" aria-controls="panel-size" aria-selected="true" onclick="showTab('size')">Size &amp; fronts</button>
@@ -1895,6 +1895,141 @@ module KeroCabinet
     migration_menu=@menu || UI.menu('Plugins')
     migration_menu.add_item(@menu ? 'Migrate all to current version...' : 'Kero Cabinet | Migrate all to current version...') { migrate_all_command }
     @migration_command_registered=true
+  end
+
+  # Read actual owned stock geometry; never regenerate the model for a report.
+  def cutlist_container?(item)
+    item.is_a?(Sketchup::ComponentInstance) || (defined?(Sketchup::Group) && item.is_a?(Sketchup::Group))
+  end
+
+  def cutlist_rows(scope, model=Sketchup.active_model)
+    raise ArgumentError, 'Unknown cut list scope.' unless [:selected, :all].include?(scope)
+    roots = scope == :selected ? model.selection.to_a : model.entities.to_a
+    raise ArgumentError, 'Select Kero Cabinet objects or a group containing them first.' if roots.empty? && scope == :selected
+    initial = scope == :selected && model.respond_to?(:edit_transform) ? model.edit_transform : Geom::Transformation.new
+    grouped = {}
+    walk = nil
+    walk = lambda do |items, parent, path|
+      items.each do |item|
+        next unless cutlist_container?(item)
+        definition = item.definition
+        next if path.include?(definition)
+        transform = parent * item.transformation
+        name = item.get_attribute(DICT, 'part_name').to_s
+        stock = definition.get_attribute(DICT, 'stock_key').to_s
+        owned = !name.empty? && (!stock.empty? || definition.name.start_with?('KC | '))
+        if owned
+          material = item.material ? item.material.name : definition.name
+          next if [material, definition.name, stock].any? { |text| text.match?(/hardware|caster-v1:/i) }
+          bounds = definition.bounds
+          raw = [bounds.width, bounds.height, bounds.depth].map(&:to_f)
+          matrix = transform.to_a
+          axes = 3.times.map { |axis| matrix[axis*4, 3] }
+          scales = axes.map { |axis| Math.sqrt(axis.sum { |v| v*v }) }
+          raise ArgumentError, "Collapsed part: #{name}. Restore its scale before exporting." if scales.any? { |scale| scale < 1e-9 }
+          3.times do |a|
+            ((a+1)...3).each do |b|
+              dot = axes[a].zip(axes[b]).sum { |x,y| x*y }
+              raise ArgumentError, "Skewed part: #{name}. Remove skewed parent scaling before exporting." if dot.abs > scales[a]*scales[b]*1e-6
+            end
+          end
+          thickness, width, length = raw.zip(scales).map { |size, scale| (size*scale*25.4).round(3) }.sort
+          raise ArgumentError, "Invalid dimensions for #{name}." unless thickness > 0 && length.finite?
+          key = [material, thickness, width, length]
+          row = grouped[key] ||= {material: material, thickness: thickness, width: width, length: length, quantity: 0, names: []}
+          row[:quantity] += 1
+          row[:names] << name unless row[:names].include?(name)
+        else
+          walk.call(definition.entities.to_a, transform, path + [definition])
+        end
+      end
+    end
+    walk.call(roots, initial, [])
+    grouped.values.sort_by { |row| [row[:material], row[:thickness], -row[:length], -row[:width]] }
+  end
+
+  def cutlist_number(value)
+    format('%.3f', value).sub(/\.?0+\z/, '')
+  end
+
+  def cutlist_csv(rows)
+    require 'csv'
+    safe = lambda do |value|
+      text = value.to_s
+      text.match?(/\A[\s]*[=+@-]|\A[\t\r\n]/) ? "'#{text}" : text
+    end
+    "\uFEFF" + CSV.generate(row_sep: "\r\n") do |csv|
+      csv << ['Part names', 'Quantity', 'Length (mm)', 'Width (mm)', 'Thickness (mm)', 'Material']
+      rows.each do |row|
+        csv << [safe.call(row[:names].join(' / ')), row[:quantity], cutlist_number(row[:length]), cutlist_number(row[:width]), cutlist_number(row[:thickness]), safe.call(row[:material])]
+      end
+    end
+  end
+
+  def cutlist_html(rows, scope)
+    require 'cgi'
+    escape = ->(value) { CGI.escapeHTML(value.to_s) }
+    count = rows.sum { |row| row[:quantity] }
+    body = rows.map do |row|
+      cells = [row[:names].join(' / '), row[:quantity], cutlist_number(row[:length]), cutlist_number(row[:width]), cutlist_number(row[:thickness]), row[:material]]
+      '<tr>' + cells.map { |value| "<td>#{escape.call(value)}</td>" }.join + '</tr>'
+    end.join
+    <<~HTML
+      <!doctype html><html><head><meta charset="utf-8"><title>Kero Cabinet Cut List</title>
+      <style>body{font:14px -apple-system,Arial,sans-serif;color:#222;margin:24px;background:#f5f5f2}h1{font-size:24px;margin-bottom:8px}p{line-height:1.5}button{padding:10px 16px;cursor:pointer;margin:8px 8px 12px 0}table{width:100%;border-collapse:collapse;background:white}th,td{padding:10px;text-align:left;border-bottom:1px solid #ddd}th{background:#e5e8e1;position:sticky;top:0}td:nth-child(n+2):nth-child(-n+5){text-align:right;white-space:nowrap}.note{color:#555;font-size:12px}@media print{button{display:none}body{margin:0;background:white}th{position:static}}</style></head><body>
+      <h1>Cut list</h1><p>#{scope == :selected ? 'Selected Kero objects' : 'All Kero objects in this model'} &middot; #{count} pieces &middot; #{rows.length} sizes &middot; millimetres</p>
+      <button onclick="window.sketchup.export_csv()">Save CSV...</button><button onclick="window.sketchup.print_report()">Print...</button>
+      <p class="note">Snapshot at opening. Actual stock blank sizes; no edge banding deductions, grain direction or sheet nesting. Hardware excluded. Length is the longest dimension. Hidden parts are included.</p>
+      <table><thead><tr><th>Part names</th><th>Qty</th><th>Length</th><th>Width</th><th>Thickness</th><th>Material</th></tr></thead><tbody>#{body}</tbody></table></body></html>
+    HTML
+  end
+
+  def show_cutlist(scope)
+    rows = cutlist_rows(scope)
+    return UI.messagebox('No Kero Cabinet wood parts found in this scope.') if rows.empty?
+    @cutlist_dialog.close if @cutlist_dialog && @cutlist_dialog.visible?
+    dialog = UI::HtmlDialog.new(dialog_title: 'Kero Cabinet | Cut list', preferences_key: 'KeroCabinetCutList', scrollable: true, resizable: true, width: 1000, height: 650, style: UI::HtmlDialog::STYLE_DIALOG)
+    @cutlist_dialog = dialog
+    @dialogs ||= []
+    @dialogs << dialog
+    dialog.set_on_closed { @dialogs.delete(dialog) }
+    dialog.set_html(cutlist_html(rows, scope))
+    dialog.add_action_callback('export_csv') do |_context|
+      begin
+        path = UI.savepanel('Save cut list CSV', nil, 'Kero_Cabinet_Cut_List.csv')
+        next unless path
+        path += '.csv' unless path.downcase.end_with?('.csv')
+        File.open(path, 'wb') { |file| file.write(cutlist_csv(rows)) }
+      rescue StandardError => error
+        UI.messagebox("Could not save cut list: #{error.message}")
+      end
+    end
+    dialog.add_action_callback('print_report') do |_context|
+      begin
+        require 'tmpdir'
+        require 'securerandom'
+        require 'uri'
+        printable = cutlist_html(rows, scope)
+          .sub('<button onclick="window.sketchup.export_csv()">Save CSV...</button>', '')
+          .sub('window.sketchup.print_report()', 'window.print()')
+        path = File.join(Dir.tmpdir, "kero-cutlist-#{SecureRandom.hex(8)}.html")
+        File.write(path, printable, encoding: 'UTF-8')
+        UI.openURL('file://' + URI::DEFAULT_PARSER.escape(path))
+      rescue StandardError => error
+        UI.messagebox("Could not open print view: #{error.message}")
+      end
+    end
+    dialog.show
+  rescue StandardError => error
+    UI.messagebox("Could not create cut list: #{error.message}")
+  end
+
+  if defined?(UI) && UI.respond_to?(:menu) && !@cutlist_commands_registered
+    cutlist_menu = @menu || UI.menu('Plugins')
+    cutlist_menu.add_separator if cutlist_menu.respond_to?(:add_separator)
+    cutlist_menu.add_item('Cut list from selection...') { show_cutlist(:selected) }
+    cutlist_menu.add_item('Cut list from all Kero objects...') { show_cutlist(:all) }
+    @cutlist_commands_registered = true
   end
 
 end

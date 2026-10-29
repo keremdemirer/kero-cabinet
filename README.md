@@ -2,7 +2,7 @@
 
 **A parametric cabinet builder for SketchUp.** Enter dimensions and a bay layout to create an editable cabinet component.
 
-Version: **v0.18.0 (early development)**. The original project reports use in SketchUp 2025. Automated tests use a mock SketchUp API; they are not runtime integration tests.
+Version: **v0.19.0 (early development)**. The original project reports use in SketchUp 2025. Automated tests use a mock SketchUp API; they are not runtime integration tests.
 
 ## Features
 
@@ -16,20 +16,22 @@ Version: **v0.18.0 (early development)**. The original project reports use in Sk
 - Full-width back panel applied outside the case
 - English interface, validation errors, generated part/material names, documentation, and tests
 
-The plugin does not generate cut lists. It targets **CutList v4.1.12** for the current workflow. Scale-aware measurement and sheet classification have been checked with that extension's original code using mock SketchUp geometry. Full SketchUp UI/PDF output still needs runtime verification. OpenCutList is a different extension and has not been validated for this shared-stock workflow.
+The plugin includes a simple native cut list: use **Cut list from selection...** or **Cut list from all Kero objects...** in its menu. Both include only Kero-owned wood parts and independent worktops, merge matching material and blank sizes, and offer CSV and printing. The Print button opens a browser print view; use Print / Save as PDF there. Hardware is excluded; hidden parts are included. Selected groups are searched recursively. Each placed instance is counted, including linked copies. Sizes use actual geometry and parent scales; skewed geometry is rejected. This report does not include edge banding, grain direction or sheet nesting. Reports are snapshots; reopen after editing the model.
+
+For advanced output, It targets **CutList v4.1.12** for the current workflow. Scale-aware measurement and sheet classification have been checked with that extension's original code using mock SketchUp geometry. Full SketchUp UI/PDF output still needs runtime verification. OpenCutList is a different extension and has not been validated for this shared-stock workflow.
 
 ## Installation
 
 1. Download the RBZ from the `kero-cabinet-rbz` artifact of a successful GitHub Actions run, or build it locally.
 2. In SketchUp, open **Extensions > Extension Manager > Install Extension**.
-3. Select `Kero_Cabinet_v0.18.0.rbz` and restart SketchUp.
+3. Select `Kero_Cabinet_v0.19.0.rbz` and restart SketchUp.
 4. Choose **Extensions > Kero Cabinet > Create new cabinet...**.
 
 To edit a cabinet, select its component and choose **Kero Cabinet | Edit parameters** from the context menu, or **Edit selected cabinet...** from the extension menu.
 
 ## Updates from GitHub
 
-Install v0.18.0 once using the RBZ. Future releases can be installed from
+Install v0.19.0 once using the RBZ. Future releases can be installed from
 **Extensions > Kero Cabinet > Check for updates...**, without downloading or
 installing another RBZ manually. The plugin reloads automatically after an update. Apply or cancel any open cabinet
 editor changes before starting: editors close during reload. The model is not
@@ -516,6 +518,7 @@ ruby test/drawer_height_test.rb
 ruby test/drawer_front_test.rb
 ruby test/interior_view_test.rb
 ruby test/migration_test.rb
+ruby test/native_cutlist_test.rb
 ruby test/reload_test.rb
 ruby test/stock_test.rb
 ruby test/worktop_test.rb
@@ -528,7 +531,7 @@ python3 scripts/update_manifest.py --check
 bash scripts/build.sh
 ```
 
-Output: `dist/Kero_Cabinet_v0.18.0.rbz`.
+Output: `dist/Kero_Cabinet_v0.19.0.rbz`.
 
 CI checks text, Ruby syntax, 27 geometry configurations, and archive integrity on pushes and pull requests. Successful runs upload the installation package.
 

@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.19.0 - 2026-10-29
+
+- Add native cut lists for selected objects or all reachable Kero objects, with grouped stock sizes, preview, printing and CSV export.
+- Count linked and nested occurrences independently, preserve transformed dimensions, exclude hardware and reject skewed parts.
+
 ## v0.18.0 - 2026-10-29
 - Add Migrate all to current version with model-wide scanning of cabinets and independent worktops, including nested containers.
 - Preflight every configuration/layout and reject locked or invalid targets before modifying the model.
