@@ -2,7 +2,7 @@
 
 **A parametric cabinet builder for SketchUp.** Enter dimensions and a bay layout to create an editable cabinet component.
 
-Version: **v0.19.0 (early development)**. The original project reports use in SketchUp 2025. Automated tests use a mock SketchUp API; they are not runtime integration tests.
+Version: **v0.19.1 (early development)**. The original project reports use in SketchUp 2025. Automated tests use a mock SketchUp API; they are not runtime integration tests.
 
 ## Features
 
@@ -24,14 +24,14 @@ For advanced output, It targets **CutList v4.1.12** for the current workflow. Sc
 
 1. Download the RBZ from the `kero-cabinet-rbz` artifact of a successful GitHub Actions run, or build it locally.
 2. In SketchUp, open **Extensions > Extension Manager > Install Extension**.
-3. Select `Kero_Cabinet_v0.19.0.rbz` and restart SketchUp.
+3. Select `Kero_Cabinet_v0.19.1.rbz` and restart SketchUp.
 4. Choose **Extensions > Kero Cabinet > Create new cabinet...**.
 
 To edit a cabinet, select its component and choose **Kero Cabinet | Edit parameters** from the context menu, or **Edit selected cabinet...** from the extension menu.
 
 ## Updates from GitHub
 
-Install v0.19.0 once using the RBZ. Future releases can be installed from
+Install v0.19.1 once using the RBZ. Future releases can be installed from
 **Extensions > Kero Cabinet > Check for updates...**, without downloading or
 installing another RBZ manually. The plugin reloads automatically after an update. Apply or cancel any open cabinet
 editor changes before starting: editors close during reload. The model is not
@@ -482,7 +482,7 @@ All design inputs are in **millimetres**.
 
 - **Width:** Overall case width.
 - **Height:** Total height including the selected base and enabled worktop.
-- **Depth:** Overall outside depth including the back and overlay fronts. Overlay front thickness is reserved within the input depth when a bay contains doors or drawers. All-open layouts reserve no front thickness.
+- **Depth:** 250-5000 mm. Overall outside depth including the back and overlay fronts. Overlay front thickness is reserved within the input depth when a bay contains doors or drawers. All-open layouts reserve no front thickness.
 - **Back panel:** Applied outside the case, within the requested depth. Case depth equals `depth - back thickness - overlay projection`.
 - **Full-height sides:** Top and bottom widths equal `overall width - 2 * panel thickness`.
 
@@ -531,7 +531,7 @@ python3 scripts/update_manifest.py --check
 bash scripts/build.sh
 ```
 
-Output: `dist/Kero_Cabinet_v0.19.0.rbz`.
+Output: `dist/Kero_Cabinet_v0.19.1.rbz`.
 
 CI checks text, Ruby syntax, 27 geometry configurations, and archive integrity on pushes and pull requests. Successful runs upload the installation package.
 

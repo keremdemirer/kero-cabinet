@@ -1,5 +1,5 @@
 # frozen_string_literal: true
-# Kero Cabinet v0.19.0, SketchUp 2020+; all design inputs use millimetres.
+# Kero Cabinet v0.19.1, SketchUp 2020+; all design inputs use millimetres.
 require 'sketchup.rb'
 require 'json'
 require_relative 'updater'
@@ -9,7 +9,7 @@ module KeroCabinet
 
   %i[DICT VERSION DEFAULT DRAWER_SLIDES].each { |name| remove_const(name) if const_defined?(name, false) }
   DICT = 'kero_cabinet'.freeze
-  VERSION = '0.19.0'.freeze
+  VERSION = '0.19.1'.freeze
 
   DEFAULT = {
     'name' => 'Parametric Cabinet',
@@ -246,7 +246,7 @@ module KeroCabinet
     c['name'] = c['name'].to_s.strip[0, 80]
     c['name'] = 'Parametric Cabinet' if c['name'].empty?
     {
-      'width' => [300, 5000], 'height' => [350, 3500], 'depth' => [250, 1200],
+      'width' => [300, 5000], 'height' => [350, 3500], 'depth' => [250, 5000],
       'rail_width' => [40, 200], 'drawer_thickness' => [6, 30],
       'worktop_thickness' => [6,100], 'worktop_front_overhang' => [0,300],
       'worktop_rear_overhang' => [0,300], 'worktop_left_overhang' => [0,300], 'worktop_right_overhang' => [0,300],
@@ -1034,7 +1034,7 @@ module KeroCabinet
     end
     { 'thickness' => [6,100], 'front_overhang' => [0,300], 'rear_overhang' => [0,300],
       'left_overhang' => [0,300], 'right_overhang' => [0,300],
-      'width' => [100,10000], 'depth' => [100,2000],
+      'width' => [100,10000], 'depth' => [100,5000],
       'x' => [-1000000,1000000], 'y' => [-1000000,1000000], 'z' => [-1000000,1000000]
     }.each { |key, (low,high)| number_between!(c, key, low, high) }
     c
@@ -1493,7 +1493,7 @@ module KeroCabinet
       </style>
       </head>
       <body>
-      <header class="editor-header"><div><h1>Kero Cabinet</h1><p>Design your cabinet. Fine-tune only what you need.</p></div><span class="version-tag">v0.19.0 &middot; mm</span></header>
+      <header class="editor-header"><div><h1>Kero Cabinet</h1><p>Design your cabinet. Fine-tune only what you need.</p></div><span class="version-tag">v0.19.1 &middot; mm</span></header>
       <p id="linked-notice" class="linked-notice" hidden></p>
       <nav class="editor-tabs" role="tablist" aria-label="Cabinet settings">
         <button id="tab-size" type="button" role="tab" data-tab="size" aria-controls="panel-size" aria-selected="true" onclick="showTab('size')">Size &amp; fronts</button>
@@ -1787,7 +1787,7 @@ module KeroCabinet
           index=event.key==='Home'?0:event.key==='End'?tabOrder.length-1:(index+(event.key==='ArrowRight'?1:-1)+tabOrder.length)%tabOrder.length;
           showTab(tabOrder[index]);document.getElementById('tab-'+tabOrder[index]).focus();
         });
-        const limits={caster_height:[35,400],caster_diameter:[20,250],caster_inset:[0,150],worktop_thickness:[6,100],worktop_front_overhang:[0,300],worktop_rear_overhang:[0,300],worktop_left_overhang:[0,300],worktop_right_overhang:[0,300],drawer_height_limit:[25,3000],drawer_rear_gap:[3,50],width:[300,5000],height:[350,3500],depth:[250,1200],panel:[9,36],back:[3,24],front:[9,32],toe:[0,250],timber_height:[20,200],timber_thickness:[10,100],frame_width:[25,90],frame_depth:[12,36],gap:[1,6],rail_width:[40,200],drawer_thickness:[6,30],drawer_bottom:[3,24]};
+        const limits={caster_height:[35,400],caster_diameter:[20,250],caster_inset:[0,150],worktop_thickness:[6,100],worktop_front_overhang:[0,300],worktop_rear_overhang:[0,300],worktop_left_overhang:[0,300],worktop_right_overhang:[0,300],drawer_height_limit:[25,3000],drawer_rear_gap:[3,50],width:[300,5000],height:[350,3500],depth:[250,5000],panel:[9,36],back:[3,24],front:[9,32],toe:[0,250],timber_height:[20,200],timber_thickness:[10,100],frame_width:[25,90],frame_depth:[12,36],gap:[1,6],rail_width:[40,200],drawer_thickness:[6,30],drawer_bottom:[3,24]};
         for(const [id,[min,max]] of Object.entries(limits)){const input=document.getElementById(id);input.min=min;input.max=max;input.required=true;input.title=`Allowed range: ${min}-${max} mm`;}
         document.addEventListener('wheel',event=>{if(document.activeElement?.type==='number')document.activeElement.blur();},{passive:true});
         function showError(message){

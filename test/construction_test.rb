@@ -141,4 +141,27 @@ class ConstructionTest < Minitest::Test
     assert_raises(ArgumentError) { build('drawer_thickness' => 0) }
     assert_raises(ArgumentError) { build('drawer_bottom' => 100) }
   end
+  def test_deep_sheet_storage_with_shelves_and_worktop
+    [2440,3000,5000].product([false,true]).each do |depth,worktop|
+      c=KeroCabinet.validate_config(KeroCabinet.clone_defaults.merge('depth'=>depth,'base_type'=>'casters','worktop'=>worktop,
+        'bays'=>[{'kind'=>'open','weight'=>1,'doors'=>1,'drawers'=>1,'shelves'=>1},{'kind'=>'open','weight'=>1,'doors'=>1,'drawers'=>1,'shelves'=>0}]))
+      model=MockModel.new
+      Sketchup.active_model=model
+      entities=MockEntities.new
+      KeroCabinet.generate_parts(entities,c,model)
+      parts=entities.instances
+      low=parts.map { |p| p.bounds_mm[0][1] }.min
+      high=parts.map { |p| p.bounds_mm[1][1] }.max
+      assert_in_delta depth,high-low,0.001
+      assert_in_delta depth-c['back'],parts.find { |p| p.name=='Left side' }.bounds_mm[1][1],0.001
+      shelf=parts.find { |p| p.name=='Bay 1 open shelf 1' }
+      assert_in_delta depth-c['back'],shelf.bounds_mm[1][1],0.001
+      if worktop
+        top=parts.find { |p| p.name=='Cabinet worktop' }
+        assert_in_delta depth,top.bounds_mm[1][1]-top.bounds_mm[0][1],0.001
+      end
+    end
+    assert_raises(ArgumentError) { KeroCabinet.validate_config(KeroCabinet.clone_defaults.merge('depth'=>5001)) }
+  end
+
 end

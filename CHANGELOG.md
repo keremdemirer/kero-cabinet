@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.19.1 - 2026-10-29
+- Raise cabinet depth to 5000 mm for deep sheet-goods storage layouts.
+- Match editor validation and allow integrated/independent worktops up to 5000 mm deep.
+- Verify long case panels, dividers, shelves and worktops preserve requested outside dimensions.
+
 ## v0.19.0 - 2026-10-29
 
 - Add native cut lists for selected objects or all reachable Kero objects, with grouped stock sizes, preview, printing and CSV export.

@@ -94,3 +94,7 @@ viewContext.setAll(false);assert.deepStrictEqual(viewRequest,{index:'all',show:f
 viewContext.renderInterior({groups:[{label:'Bay 1',fronts:['a','b']}],hidden:['a','b']});assert(viewElements.groups.innerHTML.includes('checked'));
 viewContext.interiorError('Unavailable');assert.equal(viewElements.error.textContent,'Unavailable');
 console.log('Live interior switches, restore-all action and panel state rendering passed.');
+
+elements.depth.value='2440';context.submitConfig();assert.equal(submitted.depth,2440);
+elements.depth.value='5000';context.submitConfig();assert.equal(submitted.depth,5000);
+console.log('Extended depth range accepted by the real editor.');
