@@ -39,6 +39,7 @@ jobs:
         run: |
           ruby test/sheet_layout_test.rb
           ruby test/sheet_dialog_test.rb
+          ruby test/sheet_price_test.rb
           node test/sheet_setup_test.js
       - name: Double-sided cabinets
         run: ruby test/double_sided_test.rb

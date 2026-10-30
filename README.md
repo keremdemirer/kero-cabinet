@@ -2,7 +2,7 @@
 
 **A parametric cabinet builder for SketchUp.** Enter dimensions and a bay layout to create an editable cabinet component.
 
-Version: **v0.21.1 (early development)**. The original project reports use in SketchUp 2025. Automated tests use a mock SketchUp API; they are not runtime integration tests.
+Version: **v0.22.0 (early development)**. The original project reports use in SketchUp 2025. Automated tests use a mock SketchUp API; they are not runtime integration tests.
 
 ## Features
 
@@ -24,14 +24,14 @@ For advanced output, It targets **CutList v4.1.12** for the current workflow. Sc
 
 1. Download the RBZ from the `kero-cabinet-rbz` artifact of a successful GitHub Actions run, or build it locally.
 2. In SketchUp, open **Extensions > Extension Manager > Install Extension**.
-3. Select `Kero_Cabinet_v0.21.1.rbz` and restart SketchUp.
+3. Select `Kero_Cabinet_v0.22.0.rbz` and restart SketchUp.
 4. Choose **Extensions > Kero Cabinet > Create new cabinet...**.
 
 To edit a cabinet, select its component and choose **Kero Cabinet | Edit parameters** from the context menu, or **Edit selected cabinet...** from the extension menu.
 
 ## Updates from GitHub
 
-Install v0.21.1 once using the RBZ. Future releases can be installed from
+Install v0.22.0 once using the RBZ. Future releases can be installed from
 **Extensions > Kero Cabinet > Check for updates...**, without downloading or
 installing another RBZ manually. The plugin reloads automatically after an update. Apply or cancel any open cabinet
 editor changes before starting: editors close during reload. The model is not
@@ -411,6 +411,33 @@ bay position, carrying its dimensions, contents, mixed sections and organizers.
 On double-sided cabinets this changes only the active Front/Rear layout. The
 first/last unavailable moves are disabled.
 
+## Remembered sheet prices
+
+The separate Sheet settings screen includes **Sheet prices** for every sheet
+material/thickness in the report, plus a **TRY / EUR / USD** currency selector.
+Enter the price of one whole sheet. Prices use up to two decimals; a dot or comma
+is accepted as the decimal separator, without thousands separators. Blank means
+**Not priced**; an explicit `0` means free stock. Negative/non-numeric prices are
+rejected. Values are calculated in integer cents to avoid monetary rounding drift.
+
+Successful report generation remembers prices in this SketchUp installation,
+keyed by material, thickness, sheet dimensions and currency. Swapping sheet width
+and length preserves the same stock price; changing physical size or currency
+loads its own rate or a blank. There is no currency conversion. Previously saved
+profiles not used in the current report are retained. Edits made while switching
+sizes/currencies in the prompt are saved when generating; Cancel discards pending
+changes. Clearing a price deletes that saved profile. Stock dimensions in the
+price key are normalized to 0.001 mm.
+
+The thickness summary includes **Sheet cost**, and a **Sheet costs** table breaks
+out each material/thickness, sheet count, unit price and amount. Cost is the fitted
+whole-sheet count multiplied by its entered unit price. Different material rates
+are summed rather than averaged. Missing rates or oversized/unfitted parts mark
+the known subtotal **INCOMPLETE**, rather than treating missing prices as zero.
+Both tables are included in Print / Save as PDF. CSV continues to export the
+original part table. Timber, hardware, machining, tax and delivery are not added
+separately; enter an all-in unit price when appropriate.
+
 ## Double-sided cabinets
 
 Enable **Layout > Cabinet access > Double-sided cabinet**. Choose **Edit layout:
@@ -594,6 +621,7 @@ ruby test/double_sided_test.rb
 ruby test/native_cutlist_test.rb
 ruby test/sheet_layout_test.rb
 ruby test/sheet_dialog_test.rb
+ruby test/sheet_price_test.rb
 node test/sheet_setup_test.js
 ruby test/reload_test.rb
 ruby test/stock_test.rb
@@ -607,7 +635,7 @@ python3 scripts/update_manifest.py --check
 bash scripts/build.sh
 ```
 
-Output: `dist/Kero_Cabinet_v0.21.1.rbz`.
+Output: `dist/Kero_Cabinet_v0.22.0.rbz`.
 
 CI checks text, Ruby syntax, 27 geometry configurations, and archive integrity on pushes and pull requests. Successful runs upload the installation package.
 

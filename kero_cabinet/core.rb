@@ -1,5 +1,5 @@
 # frozen_string_literal: true
-# Kero Cabinet v0.21.1, SketchUp 2020+; all design inputs use millimetres.
+# Kero Cabinet v0.22.0, SketchUp 2020+; all design inputs use millimetres.
 require 'sketchup.rb'
 require 'json'
 require_relative 'updater'
@@ -9,7 +9,7 @@ module KeroCabinet
 
   %i[DICT VERSION DEFAULT DRAWER_SLIDES].each { |name| remove_const(name) if const_defined?(name, false) }
   DICT = 'kero_cabinet'.freeze
-  VERSION = '0.21.1'.freeze
+  VERSION = '0.22.0'.freeze
 
   DEFAULT = {
     'name' => 'Parametric Cabinet',
@@ -1638,7 +1638,7 @@ module KeroCabinet
       </style>
       </head>
       <body>
-      <header class="editor-header"><div><h1>Kero Cabinet</h1><p>Design your cabinet. Fine-tune only what you need.</p></div><span class="version-tag">v0.21.1 &middot; mm</span></header>
+      <header class="editor-header"><div><h1>Kero Cabinet</h1><p>Design your cabinet. Fine-tune only what you need.</p></div><span class="version-tag">v0.22.0 &middot; mm</span></header>
       <p id="linked-notice" class="linked-notice" hidden></p>
       <nav class="editor-tabs" role="tablist" aria-label="Cabinet settings">
         <button id="tab-size" type="button" role="tab" data-tab="size" aria-controls="panel-size" aria-selected="true" onclick="showTab('size')">Size &amp; fronts</button>
@@ -2108,13 +2108,132 @@ module KeroCabinet
     grouped.values.sort_by { |row| [row[:material], row[:thickness], -row[:length], -row[:width]] }
   end
 
+  def sheet_money(cents)
+    return 'Not priced' if cents.nil?
+    whole=(cents/100).to_s.reverse.gsub(/(\d{3})(?=\d)/,'\\1,').reverse
+    "#{whole}.#{(cents%100).to_s.rjust(2,'0')}"
+  end
+
+  def sheet_price_cents(value)
+    return nil if value.nil? || value.to_s.strip.empty?
+    text=value.to_s.strip.tr(',','.')
+    unless text.match?(/\A\d{1,9}(?:\.\d{1,2})?\z/)
+      raise ArgumentError,'Sheet prices must be non-negative, with at most two decimals and no thousands separators.'
+    end
+    whole,fraction=text.split('.',2)
+    whole.to_i*100+fraction.to_s.ljust(2,'0').to_i
+  end
+
+  def sheet_price_text(cents)
+    cents.nil? ? nil : "#{cents/100}.#{(cents%100).to_s.rjust(2,'0')}"
+  end
+
+  def sheet_price_profile(material,thickness)
+    JSON.generate([material,stock_number(thickness)])
+  end
+
+  def sheet_price_catalog_key(material,thickness,settings)
+    dimensions=[settings['width'],settings['length']].sort.map { |v| format('%.3f',v) }
+    JSON.generate([material,stock_number(thickness),*dimensions,settings['currency']])
+  end
+
+  def sheet_price_groups(rows)
+    rows.select { |row| row[:material].match?(/\bsheet\b/i) }.map do |row|
+      {key:sheet_price_profile(row[:material],row[:thickness]),material:row[:material],thickness:stock_number(row[:thickness])}
+    end.uniq { |group| group[:key] }.sort_by { |group| [group[:thickness].to_f,group[:material]] }
+  end
+
+  def read_sheet_price_catalog
+    value=JSON.parse(Sketchup.read_default('KeroCabinet','sheet_prices_v1','{}'))
+    return {} unless value.is_a?(Hash)
+    value.each_with_object({}) do |(key,price),catalog|
+      next unless key.is_a?(String) && key.length<=500
+      begin
+        normalized=sheet_price_text(sheet_price_cents(price))
+        catalog[key]=normalized unless normalized.nil?
+      rescue ArgumentError
+        next
+      end
+    end
+  rescue StandardError
+    {}
+  end
+
+  def save_sheet_price_catalog(rows,settings,catalog,edits={})
+    updated=catalog.dup
+    raise ArgumentError,'Invalid pending sheet prices.' unless edits.is_a?(Hash) && edits.length<=1000
+    allowed=sheet_price_groups(rows).map { |group| group[:key] }
+    edits.each do |key,value|
+      begin
+        raise ArgumentError unless key.is_a?(String) && key.length<=500
+        profile=JSON.parse(key)
+        raise ArgumentError unless profile.is_a?(Array) && profile.length==5 && profile.all? { |part| part.is_a?(String) }
+        material,thickness,width,length,currency=profile
+        raise ArgumentError unless allowed.include?(sheet_price_profile(material,Float(thickness)))
+        raise ArgumentError unless %w[TRY EUR USD].include?(currency)
+        dimensions=[Float(width),Float(length)]
+        raise ArgumentError unless dimensions.all? { |v| v.finite? && v.between?(100,10000) } && dimensions==dimensions.sort
+        normalized_key=sheet_price_catalog_key(material,Float(thickness),{'width'=>dimensions[0],'length'=>dimensions[1],'currency'=>currency})
+        raise ArgumentError unless normalized_key==key
+        normalized=sheet_price_text(sheet_price_cents(value))
+        normalized.nil? ? updated.delete(key) : updated[key]=normalized
+      rescue JSON::ParserError,TypeError,ArgumentError
+        raise ArgumentError,'Invalid pending sheet price. Use non-negative prices with up to two decimals.'
+      end
+    end
+    sheet_price_groups(rows).each do |group|
+      key=sheet_price_catalog_key(group[:material],group[:thickness],settings)
+      value=settings['prices'][group[:key]]
+      value.nil? ? updated.delete(key) : updated[key]=value
+    end
+    Sketchup.write_default('KeroCabinet','sheet_prices_v1',JSON.generate(updated))
+    updated
+  end
+
+  def sheet_group_cost(plan,group)
+    key=sheet_price_profile(group[:material],group[:thickness])
+    price=sheet_price_cents((plan[:settings]['prices']||{})[key])
+    sheets=group[:sheets].length
+    {unit_cents:price,total_cents:price.nil? ? 0 : price*sheets,unpriced_sheets:price.nil? ? sheets : 0}
+  end
+
+  def sheet_cost_html(plan)
+    return '' if plan[:groups].empty?
+    require 'cgi'
+    currency=plan[:settings]['currency']||'TRY'
+    costs=plan[:groups].map { |group| [group,sheet_group_cost(plan,group)] }
+    missing=costs.sum { |_group,cost| cost[:unpriced_sheets] }
+    total=costs.sum { |_group,cost| cost[:total_cents] }
+    oversized=plan[:groups].sum { |group| group[:oversize].length }
+    body=costs.map do |group,cost|
+      amount=cost[:unit_cents].nil? ? 'Not priced' : sheet_money(cost[:total_cents])
+      cells=[group[:material],"#{cutlist_number(group[:thickness])} mm",group[:sheets].length,sheet_money(cost[:unit_cents]),amount]
+      '<tr>'+cells.map { |cell| "<td>#{CGI.escapeHTML(cell.to_s)}</td>" }.join+'</tr>'
+    end.join
+    partial=missing>0 || oversized>0
+    html=String.new("<h3>Sheet costs (#{currency})</h3><table class=\"sheet-summary\"><thead><tr><th>Material</th><th>Thickness</th><th>Sheets</th><th>Unit price</th><th>Sheet cost</th></tr></thead><tbody>#{body}</tbody><tfoot><tr><th colspan=\"4\">#{partial ? 'Known subtotal - INCOMPLETE' : 'Total sheet cost'}</th><th>#{sheet_money(total)}</th></tr></tfoot></table>")
+    html << "<p class=\"layout-error\">#{missing} sheets have no unit price. The subtotal is incomplete.</p>" if missing>0
+    html << "<p class=\"layout-error\">#{oversized} oversized parts are not fitted or costed. The subtotal is incomplete.</p>" if oversized>0
+    html << '<p class="note">Cost = fitted whole-sheet count x entered price per sheet. Timber, hardware, machining, tax and delivery are not added separately. Prices are user inputs; no currency conversion is performed. Enter an all-in sheet price if needed.</p>'
+    html
+  end
+
   def sheet_defaults
-    {'width'=>2100.0,'length'=>2800.0,'kerf'=>3.0,'edge'=>10.0,'rotate'=>true}
+    {'width'=>2100.0,'length'=>2800.0,'kerf'=>3.0,'edge'=>10.0,'rotate'=>true,'currency'=>'TRY','prices'=>{}}
   end
 
   def validate_sheet_settings(source)
     raise ArgumentError,'Invalid sheet settings.' unless source.is_a?(Hash)
     settings=sheet_defaults.merge(source)
+    settings['currency']=settings['currency'].to_s.upcase
+    raise ArgumentError,'Choose TRY, EUR or USD for sheet prices.' unless %w[TRY EUR USD].include?(settings['currency'])
+    prices=settings['prices']
+    raise ArgumentError,'Invalid sheet price list.' unless prices.is_a?(Hash) && prices.length<=1000
+    settings['prices']=prices.each_with_object({}) do |(key,value),normalized|
+      raise ArgumentError,'Invalid sheet price profile.' unless key.is_a?(String) && key.length<=300
+      normalized[key]=sheet_price_text(sheet_price_cents(value))
+    end
+
     {'width'=>[100,10000],'length'=>[100,10000],'kerf'=>[0,20],'edge'=>[0,100]}.each do |key,(low,high)|
       number_between!(settings,key,low,high)
     end
@@ -2198,7 +2317,9 @@ module KeroCabinet
       {thickness:thickness,materials:groups.map { |group| group[:material] }.uniq.sort,
        pieces:groups.sum { |group| group[:pieces] },area_m2:(fitted_area+missing_area)/1_000_000.0,
        sheets:sheets,not_fitted:groups.sum { |group| group[:oversize].length },
-       waste:sheets.zero? ? nil : 100*(1-fitted_area/(sheets*sheet_area))}
+       waste:sheets.zero? ? nil : 100*(1-fitted_area/(sheets*sheet_area)),
+       cost_cents:groups.sum { |group| sheet_group_cost(plan,group)[:total_cents] },
+       unpriced_sheets:groups.sum { |group| sheet_group_cost(plan,group)[:unpriced_sheets] }}
     end
   end
 
@@ -2208,12 +2329,12 @@ module KeroCabinet
     require 'cgi'
     body=summary.map do |row|
       cells=["#{cutlist_number(row[:thickness])} mm",row[:materials].join(' / '),row[:pieces],
-        format('%.3f',row[:area_m2]),row[:sheets],row[:waste] ? "#{format('%.1f',row[:waste])}%" : '-',row[:not_fitted]]
+        format('%.3f',row[:area_m2]),row[:sheets],row[:waste] ? "#{format('%.1f',row[:waste])}%" : '-',row[:not_fitted],(row[:unpriced_sheets]>0 || row[:not_fitted]>0) ? "#{sheet_money(row[:cost_cents])} (partial)" : sheet_money(row[:cost_cents])]
       '<tr>'+cells.map { |cell| "<td>#{CGI.escapeHTML(cell.to_s)}</td>" }.join+'</tr>'
     end.join
     totals=[summary.sum { |r| r[:pieces] },summary.sum { |r| r[:area_m2] },summary.sum { |r| r[:sheets] },summary.sum { |r| r[:not_fitted] }]
     <<~HTML
-      <h3>Usage by thickness</h3><table class="sheet-summary"><thead><tr><th>Thickness</th><th>Materials</th><th>Parts</th><th>Net area (m&sup2;)</th><th>Sheets</th><th>Waste</th><th>Not fitted</th></tr></thead><tbody>#{body}</tbody><tfoot><tr><th colspan="2">Total</th><th>#{totals[0]}</th><th>#{format('%.3f',totals[1])}</th><th>#{totals[2]}</th><th>-</th><th>#{totals[3]}</th></tr></tfoot></table>
+      <h3>Usage by thickness</h3><table class="sheet-summary"><thead><tr><th>Thickness</th><th>Materials</th><th>Parts</th><th>Net area (m&sup2;)</th><th>Sheets</th><th>Waste</th><th>Not fitted</th><th>Sheet cost (#{plan[:settings]['currency']||'TRY'})</th></tr></thead><tbody>#{body}</tbody><tfoot><tr><th colspan="2">Total</th><th>#{totals[0]}</th><th>#{format('%.3f',totals[1])}</th><th>#{totals[2]}</th><th>-</th><th>#{totals[3]}</th><th>#{sheet_money(summary.sum { |r| r[:cost_cents] })}#{summary.any? { |r| r[:unpriced_sheets]>0 || r[:not_fitted]>0 } ? ' (partial)' : ''}</th></tr></tfoot></table>
       <p class="note">Net area includes all requested sheet parts, including those not fitted. Sheet counts and waste cover fitted parts only. Materials remain packed separately; thickness totals do not combine their sheets. Timber is excluded.</p>
     HTML
   end
@@ -2226,6 +2347,7 @@ module KeroCabinet
     missing=plan[:groups].sum { |g| g[:oversize].length }
     html=String.new("<section><h2>Sheet layout</h2><p><strong>#{total} sheets#{missing>0 ? ' for fitting pieces only - INCOMPLETE' : ''}</strong> &middot; #{cutlist_number(settings['width'])} x #{cutlist_number(settings['length'])} mm &middot; kerf #{cutlist_number(settings['kerf'])} mm &middot; edge trim #{cutlist_number(settings['edge'])} mm &middot; rotation #{settings['rotate'] ? 'allowed' : 'off'}</p>")
     html << sheet_usage_html(plan)
+    html << sheet_cost_html(plan)
     html << '<p class="note">Guillotine placement heuristic; minimum sheet count is not guaranteed. Waste includes trim and kerf. Part labels refer to numbered cut-list rows. Rotation off aligns part Length with sheet Length; physical grain direction is not recorded. Non-sheet stock is excluded from sheet totals.</p>'
     html << "<p class=\"note\">#{plan[:excluded]} timber/non-sheet pieces remain in the cut list.</p>" if plan[:excluded]>0
     html << '<p>No sheet-material parts in this scope.</p>' if plan[:groups].empty?
@@ -2249,16 +2371,32 @@ module KeroCabinet
     html+'</section>'
   end
 
-  def sheet_setup_html(initial)
-    values=JSON.generate(initial).gsub('</','<\\/')
+  def sheet_setup_html(initial,groups=[],catalog={})
+    values=JSON.generate({settings:initial,groups:groups,catalog:catalog}).gsub('</','<\\/')
     <<~HTML
-      <!doctype html><html lang="en"><head><meta charset="utf-8"><style>body{font:14px -apple-system,Arial,sans-serif;padding:22px;background:#f5f6f1;color:#253b30}h1{font-size:21px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}label{display:block;font-size:12px;margin:6px 0}input[type=number]{box-sizing:border-box;width:100%;padding:10px;border:1px solid #bdcbb7;border-radius:6px}button{padding:12px;background:#355e40;color:white;border:0;border-radius:6px;margin-top:18px;cursor:pointer}p{font-size:12px;line-height:1.5;color:#65705e}#error{color:#ae3429}</style></head><body>
+      <!doctype html><html lang="en"><head><meta charset="utf-8"><style>body{font:14px -apple-system,Arial,sans-serif;padding:22px;background:#f5f6f1;color:#253b30}h1{font-size:21px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}label{display:block;font-size:12px;margin:6px 0}input[type=number],input[type=text],select{box-sizing:border-box;width:100%;padding:10px;border:1px solid #bdcbb7;border-radius:6px}button{padding:12px;background:#355e40;color:white;border:0;border-radius:6px;margin-top:18px;cursor:pointer}p{font-size:12px;line-height:1.5;color:#65705e}#error{color:#ae3429}</style></head><body>
       <h1>Sheet settings</h1><p>Set stock size before generating the cut list. These dimensions apply separately to each sheet material and thickness. Timber stays in the list but is excluded from sheet counts.</p>
       <form id="sheet-form"><div class="grid"><div><label for="width">Sheet width (mm)</label><input id="width" type="number" min="100" max="10000" step="any" required></div><div><label for="length">Sheet length (mm)</label><input id="length" type="number" min="100" max="10000" step="any" required></div><div><label for="kerf">Saw kerf (mm)</label><input id="kerf" type="number" min="0" max="20" step="any" required></div><div><label for="edge">Edge trim per side (mm)</label><input id="edge" type="number" min="0" max="100" step="any" required></div></div>
-      <label><input id="rotate" type="checkbox"> Allow 90-degree rotation</label><p>Rotation off keeps cut-list Length along sheet Length; grain metadata is not stored. The layout is a placement estimate and may use more sheets than an optimal solution.</p><p id="error" role="alert"></p><button type="submit">Generate cut list and layout</button> <button type="button" onclick="window.sketchup.cancel_setup()">Cancel</button></form>
-      <script>const initial=#{values};for(const key of ['width','length','kerf','edge'])document.getElementById(key).value=initial[key];document.getElementById('rotate').checked=initial.rotate;
-      document.getElementById('sheet-form').addEventListener('submit',event=>{event.preventDefault();const data={};for(const key of ['width','length','kerf','edge'])data[key]=Number(document.getElementById(key).value);data.rotate=document.getElementById('rotate').checked;window.sketchup.generate_layout(JSON.stringify(data));});
-      function sheetError(message){document.getElementById('error').textContent=message;}</script></body></html>
+      <label><input id="rotate" type="checkbox"> Allow 90-degree rotation</label><p>Rotation off keeps cut-list Length along sheet Length; grain metadata is not stored. The layout is a placement estimate and may use more sheets than an optimal solution.</p><h2>Sheet prices</h2><label for="currency">Currency</label><select id="currency"><option value="TRY">TRY</option><option value="EUR">EUR</option><option value="USD">USD</option></select><div class="grid" id="sheet-prices"></div><p>Price per whole sheet, for each material/thickness and the stock size above. Prices are remembered for this size and currency after generating. Leave blank for Not priced; enter 0 explicitly for free stock. Use up to two decimals, with a dot or comma and no thousands separators. No currency conversion.</p><p id="error" role="alert"></p><button type="submit">Generate cut list and layout</button> <button type="button" onclick="window.sketchup.cancel_setup()">Cancel</button></form>
+      <script>
+      const payload=#{values};
+      const initial=payload.settings,priceGroups=payload.groups,priceCatalog=payload.catalog;
+      let activePriceKeys={},priceEdits={};
+      for(const key of ['width','length','kerf','edge'])document.getElementById(key).value=initial[key];
+      document.getElementById('rotate').checked=initial.rotate;
+      document.getElementById('currency').value=initial.currency;
+      function escapePrice(text){return String(text).split('&').join('&amp;').split('<').join('&lt;').split('>').join('&gt;').split('"').join('&quot;').split("'").join('&#39;');}
+      function stockPriceKey(group){const dimensions=[Number(document.getElementById('width').value),Number(document.getElementById('length').value)].sort((a,b)=>a-b).map(n=>n.toFixed(3));return JSON.stringify([group.material,group.thickness,...dimensions,document.getElementById('currency').value]);}
+      function renderSheetPrices(){
+        priceGroups.forEach((group,i)=>{const input=document.getElementById('sheet-price-'+i);if(input&&activePriceKeys[group.key]){const key=activePriceKeys[group.key];if(input.value!==(priceCatalog[key]??''))priceEdits[key]=input.value;priceCatalog[key]=input.value;}});
+        activePriceKeys={};
+        document.getElementById('sheet-prices').innerHTML=priceGroups.map((group,i)=>{const key=stockPriceKey(group);activePriceKeys[group.key]=key;const value=priceCatalog[key]??'';return '<div><label for="sheet-price-'+i+'">'+escapePrice(group.material)+' / '+escapePrice(group.thickness)+' mm</label><input type="text" inputmode="decimal" maxlength="20" id="sheet-price-'+i+'" placeholder="Not priced" value="'+escapePrice(value)+'"></div>';}).join('')||'<p>No sheet materials in this scope.</p>';
+      }
+      for(const key of ['width','length','currency'])document.getElementById(key).addEventListener('change',renderSheetPrices);
+      renderSheetPrices();
+      document.getElementById('sheet-form').addEventListener('submit',event=>{event.preventDefault();const data={};for(const key of ['width','length','kerf','edge'])data[key]=Number(document.getElementById(key).value);data.rotate=document.getElementById('rotate').checked;data.currency=document.getElementById('currency').value;data.prices={};priceGroups.forEach((group,i)=>{const value=document.getElementById('sheet-price-'+i).value;data.prices[group.key]=value;const key=activePriceKeys[group.key];if(value!==(priceCatalog[key]??''))priceEdits[key]=value;});data.price_edits=priceEdits;window.sketchup.generate_layout(JSON.stringify(data));});
+      function sheetError(message){document.getElementById('error').textContent=message;}
+      </script></body></html>
     HTML
   end
 
@@ -2269,15 +2407,20 @@ module KeroCabinet
     rescue StandardError
       initial=sheet_defaults
     end
+    catalog=read_sheet_price_catalog
+    groups=sheet_price_groups(rows)
     @sheet_setup_dialog.close if @sheet_setup_dialog && @sheet_setup_dialog.visible?
-    dialog=UI::HtmlDialog.new(dialog_title:'Kero Cabinet | Sheet settings',preferences_key:'KeroCabinet.SheetSettings',scrollable:true,resizable:true,width:490,height:590,style:UI::HtmlDialog::STYLE_DIALOG)
+    dialog=UI::HtmlDialog.new(dialog_title:'Kero Cabinet | Sheet settings',preferences_key:'KeroCabinet.SheetSettings',scrollable:true,resizable:true,width:560,height:690,style:UI::HtmlDialog::STYLE_DIALOG)
     @sheet_setup_dialog=dialog
-    dialog.set_html(sheet_setup_html(initial))
+    dialog.set_html(sheet_setup_html(initial,groups,catalog))
     dialog.add_action_callback('cancel_setup') { |_context| dialog.close }
     dialog.add_action_callback('generate_layout') do |_context,raw|
       begin
-        settings=validate_sheet_settings(JSON.parse(raw))
+        payload=JSON.parse(raw)
+        edits=payload.delete('price_edits')||{}
+        settings=validate_sheet_settings(payload)
         plan=sheet_layout(rows,settings)
+        save_sheet_price_catalog(rows,settings,catalog,edits)
         Sketchup.write_default('KeroCabinet','sheet_settings',JSON.generate(settings))
         show_cutlist_report(rows,scope,plan)
         dialog.close

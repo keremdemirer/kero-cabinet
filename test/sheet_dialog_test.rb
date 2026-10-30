@@ -4,8 +4,8 @@ require 'minitest/autorun'
 require 'uri'
 
 module Sketchup
-  def self.read_default(_section,_key,fallback); @sheet_saved||fallback;end
-  def self.write_default(_section,_key,value); @sheet_saved=value;end
+  def self.read_default(_section,key,fallback); (key=='sheet_prices_v1' ? @price_saved : @sheet_saved)||fallback;end
+  def self.write_default(_section,key,value); key=='sheet_prices_v1' ? @price_saved=value : @sheet_saved=value;end
 end
 module UI
   class HtmlDialog
@@ -30,6 +30,7 @@ class SheetDialogTest < Minitest::Test
   def setup
     KeroCabinet.close_editors_for_reload
     Sketchup.instance_variable_set(:@sheet_saved,nil)
+    Sketchup.instance_variable_set(:@price_saved,nil)
     @rows=[{width:500,length:700,quantity:2,thickness:18,material:'18 mm Sheet',names:['Panel']}]
   end
   def test_command_prompts_first_then_generates_layout_and_print_snapshot

@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.22.0 - 2026-10-31
+- Add per-material/thickness sheet prices and TRY/EUR/USD selection to the separate stock-settings screen.
+- Remember rates by material, thickness, physical stock size and currency, preserving inactive profiles and pending edits on successful generation.
+- Add unit-price and whole-sheet cost tables plus thickness-level cost totals to reports and Print/PDF output.
+- Use integer-cent arithmetic, accept decimal dot/comma, distinguish blank from explicit zero and mark missing/unfitted costs incomplete.
+- Verify price persistence, stock/currency isolation, exact costs and printable report totals.
+
 ## v0.21.1 - 2026-10-31
 - Add a Usage by thickness summary above sheet layouts, including materials, requested parts, net square metres, sheets, waste and not-fitted counts.
 - Preserve separate material packing and explicitly distinguish requested area from fitted-only sheet counts.
