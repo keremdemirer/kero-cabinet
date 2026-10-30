@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.20.0 - 2026-10-31
+- Add double-sided cabinets with independently editable front/rear layouts and separate drawer boxes.
+- Share the outer case, base and worktop; separate both faces with a case-stock center partition and adjustable 10-90% front depth share.
+- Mirror rear geometry, namespace its parts, preserve organizers/linked families and open rear drawers in the outward direction.
+- Lower minimum overall height to 100 mm while retaining stock/base/hardware checks and validating shelf space in shallow layouts.
+- Verify dimensions, box separation, front/rear editor state, opening poses and shallow custom cabinets.
+
 ## v0.19.1 - 2026-10-29
 - Raise cabinet depth to 5000 mm for deep sheet-goods storage layouts.
 - Match editor validation and allow integrated/independent worktops up to 5000 mm deep.

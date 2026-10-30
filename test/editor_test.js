@@ -98,3 +98,19 @@ console.log('Live interior switches, restore-all action and panel state renderin
 elements.depth.value='2440';context.submitConfig();assert.equal(submitted.depth,2440);
 elements.depth.value='5000';context.submitConfig();assert.equal(submitted.depth,5000);
 console.log('Extended depth range accepted by the real editor.');
+
+// Independent front/rear layouts survive face changes and serialization.
+elements.double_sided.checked=true;context.updateAccess();
+context.changeBay(0,'kind','drawer');context.changeBay(0,'drawers','2');
+context.switchLayoutFace('rear');context.changeBay(0,'drawers','3');
+context.changeOrganizer(0,-1,0,'type','panels');
+elements.front_depth_share.value='60';context.submitConfig();
+assert.equal(submitted.double_sided,true);assert.equal(submitted.front_depth_share,60);
+assert.equal(submitted.bays[0].drawers,2);assert.equal(submitted.rear_bays[0].drawers,3);
+assert.equal(submitted.rear_bays[0].organizers[0].type,'panels');
+assert.equal(context.organizerKey(0,-1,0),'rear:0:-1:0');
+context.switchLayoutFace('front');assert.equal(context.organizerKey(0,-1,0),'0:-1:0');
+elements.height.value='100';context.submitConfig();assert.equal(submitted.height,100);
+elements.double_sided.checked=false;context.updateAccess();context.submitConfig();
+assert.equal(submitted.double_sided,false);assert.equal(submitted.rear_bays[0].drawers,3);
+console.log('Independent front/rear layouts and 100 mm overall height are serialized correctly.');

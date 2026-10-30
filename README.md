@@ -2,7 +2,7 @@
 
 **A parametric cabinet builder for SketchUp.** Enter dimensions and a bay layout to create an editable cabinet component.
 
-Version: **v0.19.1 (early development)**. The original project reports use in SketchUp 2025. Automated tests use a mock SketchUp API; they are not runtime integration tests.
+Version: **v0.20.0 (early development)**. The original project reports use in SketchUp 2025. Automated tests use a mock SketchUp API; they are not runtime integration tests.
 
 ## Features
 
@@ -24,14 +24,14 @@ For advanced output, It targets **CutList v4.1.12** for the current workflow. Sc
 
 1. Download the RBZ from the `kero-cabinet-rbz` artifact of a successful GitHub Actions run, or build it locally.
 2. In SketchUp, open **Extensions > Extension Manager > Install Extension**.
-3. Select `Kero_Cabinet_v0.19.1.rbz` and restart SketchUp.
+3. Select `Kero_Cabinet_v0.20.0.rbz` and restart SketchUp.
 4. Choose **Extensions > Kero Cabinet > Create new cabinet...**.
 
 To edit a cabinet, select its component and choose **Kero Cabinet | Edit parameters** from the context menu, or **Edit selected cabinet...** from the extension menu.
 
 ## Updates from GitHub
 
-Install v0.19.1 once using the RBZ. Future releases can be installed from
+Install v0.20.0 once using the RBZ. Future releases can be installed from
 **Extensions > Kero Cabinet > Check for updates...**, without downloading or
 installing another RBZ manually. The plugin reloads automatically after an update. Apply or cancel any open cabinet
 editor changes before starting: editors close during reload. The model is not
@@ -366,6 +366,33 @@ The same command can be invoked from **Window > Ruby Console**:
 KeroCabinet.migrate_all_command
 ```
 
+## Double-sided cabinets
+
+Enable **Layout > Cabinet access > Double-sided cabinet**. Choose **Edit layout:
+Front / Rear** to configure each face independently, including bays, mixed sections,
+drawer counts and per-drawer organizers. Rear bays run left to right when viewed
+from behind the cabinet. Switching faces preserves the other face's settings;
+disabling double-sided access retains the rear layout for later use.
+
+Both faces share case width/height, material thicknesses, front style, face-frame
+settings, drawer hardware, base and worktop. **Front share of usable depth (%)**
+sets 10-90% of the depth remaining after both overlay fronts and a case-stock
+center partition. Default is 50/50. Drawer boxes are separate, terminate before
+the partition and use their normal rear clearance/nominal runner-length rules.
+Insufficient per-face depth is rejected; increase overall depth or adjust the share.
+The outer sides, top and bottom are shared, with one base/support system and one
+optional worktop. There is no exterior back panel in this mode: the center partition
+replaces the back controls. Timber bases include fascia on both access sides.
+
+Rear parts have a **Rear** prefix in component names and cut lists. Interior view
+lists front and rear targets separately, sliding rear drawers outward from the
+back. Linked copies and model migration preserve both face layouts.
+
+Minimum total cabinet height is now **100 mm**. This does not remove stock, base,
+worktop or hardware clearance requirements. For shallow custom cabinets choose
+**No base**, disable the worktop/frame if needed, and use a suitable drawer count
+or open layout. A 100 mm toe kick cannot fit inside a 100 mm total cabinet.
+
 ## Interior inspection
 
 Select a cabinet and open **Kero Cabinet > Interior view...**, the matching
@@ -518,6 +545,7 @@ ruby test/drawer_height_test.rb
 ruby test/drawer_front_test.rb
 ruby test/interior_view_test.rb
 ruby test/migration_test.rb
+ruby test/double_sided_test.rb
 ruby test/native_cutlist_test.rb
 ruby test/reload_test.rb
 ruby test/stock_test.rb
@@ -531,7 +559,7 @@ python3 scripts/update_manifest.py --check
 bash scripts/build.sh
 ```
 
-Output: `dist/Kero_Cabinet_v0.19.1.rbz`.
+Output: `dist/Kero_Cabinet_v0.20.0.rbz`.
 
 CI checks text, Ruby syntax, 27 geometry configurations, and archive integrity on pushes and pull requests. Successful runs upload the installation package.
 

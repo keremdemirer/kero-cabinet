@@ -1,5 +1,5 @@
 # frozen_string_literal: true
-# Kero Cabinet v0.19.1, SketchUp 2020+; all design inputs use millimetres.
+# Kero Cabinet v0.20.0, SketchUp 2020+; all design inputs use millimetres.
 require 'sketchup.rb'
 require 'json'
 require_relative 'updater'
@@ -9,10 +9,13 @@ module KeroCabinet
 
   %i[DICT VERSION DEFAULT DRAWER_SLIDES].each { |name| remove_const(name) if const_defined?(name, false) }
   DICT = 'kero_cabinet'.freeze
-  VERSION = '0.19.1'.freeze
+  VERSION = '0.20.0'.freeze
 
   DEFAULT = {
     'name' => 'Parametric Cabinet',
+    'double_sided' => false,
+    'front_depth_share' => 50,
+    'rear_bays' => [{ 'kind'=>'drawer','weight'=>1,'doors'=>1,'drawers'=>4,'shelves'=>0 }],
     'width' => 1200,
     'height' => 850,
     'depth' => 560,
@@ -237,16 +240,24 @@ module KeroCabinet
   end
 
   def case_depth(c)
+    return c['depth']-overlay_projection(c)-rear_projection(c) if c['double_sided']
     c['depth'] - (c['back_construction'] == 'full' ? c['back'] : 0) - overlay_projection(c)
   end
 
   def validate_config(source)
     raise ArgumentError, 'Invalid configuration data.' unless source.is_a?(Hash)
     c = clone_defaults.merge(source)
+    c['double_sided']=c['double_sided']==true
+    begin
+      c['front_depth_share']=Float(c['front_depth_share'])
+      raise ArgumentError unless c['front_depth_share'].finite? && c['front_depth_share'].between?(10,90)
+    rescue TypeError,ArgumentError
+      raise ArgumentError, 'Front depth share must be between 10% and 90%.'
+    end
     c['name'] = c['name'].to_s.strip[0, 80]
     c['name'] = 'Parametric Cabinet' if c['name'].empty?
     {
-      'width' => [300, 5000], 'height' => [350, 3500], 'depth' => [250, 5000],
+      'width' => [300, 5000], 'height' => [100, 3500], 'depth' => [250, 5000],
       'rail_width' => [40, 200], 'drawer_thickness' => [6, 30],
       'worktop_thickness' => [6,100], 'worktop_front_overhang' => [0,300],
       'worktop_rear_overhang' => [0,300], 'worktop_left_overhang' => [0,300], 'worktop_right_overhang' => [0,300],
@@ -278,7 +289,7 @@ module KeroCabinet
     %w[top_construction back_construction].each do |key|
       raise ArgumentError, "#{key}: choose full or rails." unless %w[full rails].include?(c[key])
     end
-    if c['top_construction'] == 'rails' || c['back_construction'] == 'rails'
+    if c['top_construction'] == 'rails' || (!c['double_sided'] && c['back_construction'] == 'rails')
       c['construction'] = 'sides_full'
     end
     unless source.key?('bottom_construction')
@@ -320,7 +331,7 @@ module KeroCabinet
     if c['top_construction'] == 'rails' && rear_limit - frame_depth <= 2 * c['rail_width']
       raise ArgumentError, 'Top support rails need more depth or a smaller rail width.'
     end
-    if c['back_construction'] == 'rails' && case_height(c) - base_height(c) - 2 * c['panel'] <= 2 * c['rail_width']
+    if !c['double_sided'] && c['back_construction'] == 'rails' && case_height(c) - base_height(c) - 2 * c['panel'] <= 2 * c['rail_width']
       raise ArgumentError, 'Back support rails need more height or a smaller rail width.'
     end
     unless c['bays'].is_a?(Array) && c['bays'].length.between?(1, 6)
@@ -341,6 +352,20 @@ module KeroCabinet
     widths = c['bays'].map { |b| c['width'] * b['weight'] / total }
     minimum = c['panel'] * 2 + (c['frame'] ? c['frame_width'] : 0) + 110
     raise ArgumentError, "Each bay must be at least #{minimum.round} mm wide. Increase the width or adjust the weights." if widths.any? { |w| w < minimum }
+    if c['double_sided']
+      unless c['rear_bays'].is_a?(Array) && c['rear_bays'].length.between?(1,6)
+        raise ArgumentError, 'Rear layout needs 1-6 bays.'
+      end
+      configs,body,zone=double_face_configs(c)
+      configs.each_with_index do |face,index|
+        begin
+          validated=validate_config(face)
+          c['rear_bays']=validated['bays'] if index==1
+        rescue ArgumentError => e
+          raise ArgumentError, "#{index==1 ? 'Rear' : 'Front'} layout: #{e.message} Increase total depth or adjust Front depth share."
+        end
+      end
+    end
     c
   end
 
@@ -610,7 +635,109 @@ module KeroCabinet
     end
   end
 
-  def generate_parts(entities, c, model, preview: false)
+  def rear_projection(c)
+    overlay_projection(c.merge('bays'=>c['rear_bays'],'double_sided'=>false))
+  end
+
+  def double_face_configs(c)
+    body=c['depth']-overlay_projection(c)-rear_projection(c)
+    usable=body-c['panel']
+    front_zone=usable*c['front_depth_share']/100.0
+    rear_zone=usable-front_zone
+    configs=[['front',c['bays'],front_zone,overlay_projection(c)],['rear',c['rear_bays'],rear_zone,rear_projection(c)]].map do |face,bays,zone,projection|
+      c.merge('double_sided'=>false,'bays'=>JSON.parse(JSON.generate(bays)),
+        'depth'=>zone+projection+c['panel']/2.0,'back'=>c['panel']/2.0,'back_construction'=>'full')
+    end
+    [configs,body,front_zone]
+  end
+
+  def generate_double_parts(entities,c,model,preview:false)
+    configs,body,front_zone=double_face_configs(c)
+    previews=[]
+    configs.each_with_index do |face,index|
+      if preview
+        rows=generate_single_parts(nil,face,nil,preview:true,layout_only:true)
+      else
+        created=[]
+        proxy=Object.new
+        flip=Geom::Transformation.new([mm(c['width']),mm(body),0])*Geom::Transformation.rotation([0,0,0],Z_AXIS,Math::PI)
+        proxy.define_singleton_method(:add_instance) do |definition,transform|
+          part=entities.add_instance(definition,index==1 ? flip*transform : transform)
+          created << part
+          part
+        end
+        rows=generate_single_parts(proxy,face,model,layout_only:true)
+        if index==1
+          created.each do |part|
+            part.name="Rear #{part.name}"
+            part.set_attribute(DICT,'part_name',part.name)
+          end
+        end
+      end
+      rows.each { |row| row['key']="rear:#{row['key']}" if index==1 }
+      previews.concat(rows)
+    end
+    w,t,h,toe=c['width'],c['panel'],case_height(c),base_height(c)
+    fd=c['frame'] ? c['frame_depth'] : 0.0
+    palette={}
+    add=lambda { |name,role,x,y,z,sx,sy,sz| box(entities,name,part_stock(name,role,c),x,y,z,sx,sy,sz,palette) unless preview }
+    full_bottom=c['bottom_construction']=='full'
+    full_top=c['construction']=='top_bottom_full' && c['top_construction']=='full'
+    side_bottom=toe+(full_bottom ? t : 0)
+    side_top=h-(full_top ? t : 0)
+    add.call('Left side','Case',0,fd,side_bottom,t,body-2*fd,side_top-side_bottom)
+    add.call('Right side','Case',w-t,fd,side_bottom,t,body-2*fd,side_top-side_bottom)
+    add.call('Bottom panel','Case',full_bottom ? 0 : t,fd,toe,full_bottom ? w : w-2*t,body-2*fd,t)
+    if c['top_construction']=='full'
+      add.call('Top panel','Case',full_top ? 0 : t,fd,h-t,full_top ? w : w-2*t,body-2*fd,t)
+    else
+      add.call('Top front support rail','Case',t,fd,h-t,w-2*t,c['rail_width'],t)
+      add.call('Top rear support rail','Case',t,body-fd-c['rail_width'],h-t,w-2*t,c['rail_width'],t)
+    end
+    add.call('Center partition','Case',t,front_zone,toe+t,w-2*t,t,h-toe-2*t)
+    if c['base_type']=='timber' && toe>0
+      recess=[65.0,(body-2*fd)/3.0].min
+      add.call('Toe kick front','Case',0,fd+recess,0,w,t,toe)
+      add.call('Rear toe kick front','Case',0,body-fd-recess-t,0,w,t,toe)
+      if c['toe_frame']
+        base_c=c.merge('double_sided'=>false,'depth'=>body-fd-recess-t+c['back']+overlay_projection(c))
+        # Merge nearby support locations from both face layouts to avoid overlapping rails.
+        boundaries=[0.0,w]
+        [c['bays'],c['rear_bays']].each_with_index do |bays,index|
+          cursor=0.0
+          total=bays.sum { |b| b['weight'] }
+          bays[0...-1].each { |bay| cursor+=w*bay['weight']/total;boundaries << (index==1 ? w-cursor : cursor) }
+        end
+        merged=[0.0]
+        spacing=c['toe']>c['timber_height'] ? [c['timber_thickness'],c['timber_height']].max : c['timber_thickness']
+        boundaries.uniq.sort[1...-1].each do |x|
+          if merged.length>1 && x-merged.last<spacing
+            merged[-1]=(merged.last+x)/2
+          else
+            merged << x
+          end
+        end
+        merged << w
+        generate_toe_frame(add,base_c,merged,fd)
+      end
+    end
+    if c['base_type']=='casters'
+      caster_c=c.merge('double_sided'=>false,'depth'=>body-fd+c['back']+overlay_projection(c))
+      preview ? caster_positions(caster_c) : generate_casters(entities,caster_c,model)
+    end
+    if c['worktop'] && !preview
+      geometry=worktop_geometry(cabinet_worktop_config(c))
+      box(entities,'Cabinet worktop',geometry[:stock],*geometry[:origin],*geometry[:size],palette)
+    end
+    previews
+  end
+
+  def generate_parts(entities,c,model,preview:false)
+    return generate_double_parts(entities,c,model,preview:preview) if c['double_sided']
+    generate_single_parts(entities,c,model,preview:preview)
+  end
+
+  def generate_single_parts(entities, c, model, preview: false, layout_only: false)
     organizer_previews=[]
     w, h, d = c.values_at('width', 'height', 'depth')
     h = case_height(c)
@@ -623,6 +750,8 @@ module KeroCabinet
     g = c['gap']
     palette = {}
     add = lambda do |name, material, x, y, z, sx, sy, sz|
+      outer=%w[Left\ side Right\ side Bottom\ panel Top\ panel Back\ panel Top\ front\ support\ rail Top\ rear\ support\ rail Back\ upper\ support\ rail Back\ lower\ support\ rail Toe\ kick\ front]
+      next if layout_only && outer.include?(name)
       box(entities, name, part_stock(name, material, c), x, y, z, sx, sy, sz, palette) unless preview
     end
 
@@ -668,8 +797,8 @@ module KeroCabinet
     bounds[-1] = w
     n = c['bays'].length
 
-    generate_toe_frame(add, c, bounds, fd) if c['base_type'] == 'timber' && c['toe_frame'] && toe > 0
-    generate_casters(entities, c, model) if c['base_type'] == 'casters' && !preview
+    generate_toe_frame(add, c, bounds, fd) if c['base_type'] == 'timber' && c['toe_frame'] && toe > 0 && !layout_only
+    generate_casters(entities, c, model) if c['base_type'] == 'casters' && !preview && !layout_only
 
     # Full-height intermediate panels and face-frame stiles align with bays.
     (1...n).each do |i|
@@ -720,7 +849,7 @@ module KeroCabinet
       end
       front_width = front_right - front_left
       front_height = front_top - front_bottom
-      raise ArgumentError, "Bay #{i+1}: available opening is too small." if front_width < 60 || front_height < (bay['kind'] == 'drawer' ? drawer_minimum(c) + drawer_vertical_allowance(c) : 100)
+      raise ArgumentError, "Bay #{i+1}: available opening is too small." if front_width < 60 || front_height < (bay['kind'] == 'drawer' ? drawer_minimum(c) + drawer_vertical_allowance(c) : 1)
 
       sections = bay['kind'] == 'stack' ? bay['sections'] : [bay]
       total_weight = sections.sum { |section| section['weight'] }
@@ -749,7 +878,7 @@ module KeroCabinet
         front_bottom = section_index.zero? ? outer_front_bottom : lower + front_margin
         front_top = section_index == sections.length-1 ? outer_front_top : upper - front_margin
         front_height = front_top - front_bottom
-        minimum_section = section['kind'] == 'drawer' ? drawer_minimum(c) + drawer_vertical_allowance(c) : 100
+        minimum_section = section['kind'] == 'drawer' ? drawer_minimum(c) + drawer_vertical_allowance(c) : [section['kind']=='door' ? 20 : 1,section['shelves']*t+section['shelves']+1].max
         if front_height < minimum_section || cavity_top - cavity_bottom < minimum_section
           label = sections.length == 1 ? section_name : "Bay #{i+1}, #{section_index == sections.length-1 ? 'top' : section_index.zero? ? 'bottom' : 'middle'} section"
           raise ArgumentError, "#{label}: available front #{front_height.round(1)} mm, internal opening #{(cavity_top-cavity_bottom).round(1)} mm. Need at least #{minimum_section.round(1)} mm for the selected contents/slide. Increase this section's height ratio or select a lower-profile slide."
@@ -859,7 +988,7 @@ module KeroCabinet
       end
       end
     end
-    if c['worktop'] && !preview
+    if c['worktop'] && !preview && !layout_only
       geometry = worktop_geometry(cabinet_worktop_config(c))
       box(entities, 'Cabinet worktop', geometry[:stock], *geometry[:origin], *geometry[:size], palette)
     end
@@ -1310,6 +1439,21 @@ module KeroCabinet
 
   def interior_groups(instance)
     c=JSON.parse(cabinet_config_raw(instance))
+    groups=interior_groups_for_config(c)
+    if c['double_sided']
+      rear=interior_groups_for_config(c.merge('bays'=>c['rear_bays']))
+      rear.each do |group|
+        group['label']="Rear #{group['label']}"
+        group['fronts']=group['fronts'].map { |name| "Rear #{name}" }
+        group['tag']="Rear #{group['tag']}" if group['tag']
+        group['rear']=true
+      end
+      groups.concat(rear)
+    end
+    groups
+  end
+
+  def interior_groups_for_config(c)
     groups=[]
     c['bays'].each_with_index do |bay,i|
       sections=bay['kind']=='stack' ? bay['sections'] : [bay]
@@ -1357,7 +1501,7 @@ module KeroCabinet
         side=parts.find { |part| part.name=="#{group['tag']} left side" }
         next unless side
         low,high=interior_bounds(side)
-        shift=Geom::Transformation.new([0,-(high[1]-low[1])*0.9,0])
+        shift=Geom::Transformation.new([0,(group['rear'] ? 1 : -1)*(high[1]-low[1])*0.9,0])
         parts.select { |part| part.name==group['fronts'].first || part.name.start_with?("#{group['tag']} ") }.each do |part|
           part.transformation=shift*part.transformation
         end
@@ -1367,7 +1511,8 @@ module KeroCabinet
           next unless door
           low,high=interior_bounds(door)
           right=group['fronts'].length>1 && index==group['fronts'].length-1
-          pivot=[right ? high[0] : low[0],high[1],low[2]]
+          hinge_right=group['rear'] ? !right : right
+          pivot=[hinge_right ? high[0] : low[0],group['rear'] ? low[1] : high[1],low[2]]
           swing=Geom::Transformation.rotation(pivot,Z_AXIS,(right ? 1 : -1)*Math::PI/2)
           door.transformation=swing*door.transformation
         end
@@ -1493,7 +1638,7 @@ module KeroCabinet
       </style>
       </head>
       <body>
-      <header class="editor-header"><div><h1>Kero Cabinet</h1><p>Design your cabinet. Fine-tune only what you need.</p></div><span class="version-tag">v0.19.1 &middot; mm</span></header>
+      <header class="editor-header"><div><h1>Kero Cabinet</h1><p>Design your cabinet. Fine-tune only what you need.</p></div><span class="version-tag">v0.20.0 &middot; mm</span></header>
       <p id="linked-notice" class="linked-notice" hidden></p>
       <nav class="editor-tabs" role="tablist" aria-label="Cabinet settings">
         <button id="tab-size" type="button" role="tab" data-tab="size" aria-controls="panel-size" aria-selected="true" onclick="showTab('size')">Size &amp; fronts</button>
@@ -1511,7 +1656,7 @@ module KeroCabinet
             <div><label for="height">Overall height (mm)</label><input id="height" type="number" step="1"></div>
             <div><label for="depth">Overall depth (mm)</label><input id="depth" type="number" step="1"></div>
           </div>
-          <details class="help-details"><summary>How this works</summary><p class="hint">Depth includes the back and any overlay fronts. The case is shortened to keep the requested overall depth. Overall height includes the selected base and any enabled worktop.</p></details>
+          <details class="help-details"><summary>How this works</summary><p class="hint">Depth includes the back and any overlay fronts. The case is shortened to keep the requested overall depth. Overall height includes the selected base and any enabled worktop. Minimum total height is 100 mm; select No base and suitable panel/front settings for shallow custom builds.</p></details>
         </section><section class="section">
           <h2>Front style</h2>
           <div class="grid two">
@@ -1522,6 +1667,8 @@ module KeroCabinet
 <div id="panel-layout" role="tabpanel" data-panel="layout" aria-labelledby="tab-layout" hidden><section class="section">
           <h2>Cabinet layout</h2>
           <p class="hint" style="margin:0 0 10px">Add bays from left to right. Choose their contents, then split a bay into stacked sections when you need drawers below doors.</p>
+          <section class="section"><h2>Cabinet access</h2><div class="check"><input id="double_sided" type="checkbox" onchange="updateAccess()"><label for="double_sided">Double-sided cabinet</label></div>
+          <div id="double-options" hidden><div class="grid two"><div><label for="front_depth_share">Front share of usable depth (%)</label><input id="front_depth_share" type="number" min="10" max="90" value="50"></div><div><label for="layout_face">Edit layout</label><select id="layout_face" onchange="switchLayoutFace(this.value)"><option value="front">Front</option><option value="rear">Rear</option></select></div></div><p class="hint">Independent boxes on each face. A case-stock center partition separates them. Share applies after both overlay fronts and the partition. Back panel settings are replaced by this partition. Rear bays are shown left to right when standing behind the cabinet.</p></div><p id="layout-face-label" class="hint">Front layout</p></section>
           <div id="bays"></div>
           <button class="ghost" onclick="addBay()" type="button">+ Add bay</button>
         </section></div>
@@ -1620,7 +1767,16 @@ module KeroCabinet
         const linkedCount=initial._linked_count||0;
         document.getElementById('linked-notice').hidden=linkedCount<1;
         document.getElementById('linked-notice').textContent=`Linked cabinet: Apply to model updates all ${linkedCount} linked copies. Positions stay separate. Reopen other editors after applying to avoid stale settings.`;
-        let bays = JSON.parse(JSON.stringify(initial.bays));
+        let frontBays=JSON.parse(JSON.stringify(initial.bays));
+        let rearBays=JSON.parse(JSON.stringify(initial.rear_bays));
+        let activeFace='front';
+        let bays=frontBays;
+        document.getElementById('double_sided').checked=!!initial.double_sided;
+        document.getElementById('front_depth_share').value=initial.front_depth_share;
+        function switchLayoutFace(face){activeFace=face;bays=face==='rear'?rearBays:frontBays;organizerFits={};organizerRevision++;renderBays();document.getElementById('layout-face-label').textContent=face==='rear'?'Rear layout':'Front layout';}
+        function updateAccess(){const enabled=document.getElementById('double_sided').checked;document.getElementById('double-options').hidden=!enabled;document.getElementById('front_depth_share').disabled=!enabled;document.getElementById('layout_face').disabled=!enabled;document.getElementById('back_construction').disabled=enabled;document.getElementById('back').disabled=enabled;if(!enabled){document.getElementById('layout_face').value='front';switchLayoutFace('front');}updateConstruction();}
+        function organizerKey(i,s,j){return (activeFace==='rear'?'rear:':'')+`${i}:${s}:${j}`;}
+
         const ids = ['name','width','height','depth','panel','back','front','toe','gap','style','frame_width','frame_depth','timber_height','timber_thickness','top_construction','bottom_construction','back_construction','rail_width','drawer_thickness','drawer_bottom','drawer_slide','undermount_length','drawer_rear_gap','drawer_height_mode','drawer_height_limit','worktop_thickness','worktop_material','worktop_front_overhang','worktop_rear_overhang','worktop_left_overhang','worktop_right_overhang','base_type','caster_height','caster_diameter','caster_inset'];
         for (const id of ids) document.getElementById(id).value = initial[id];
         document.getElementById('frame').checked = !!initial.frame;
@@ -1631,11 +1787,11 @@ module KeroCabinet
         const n = (v) => Number(v);
         const escapeHtml = (s) => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
         function updateConstruction(){
-          const rails=['top_construction','back_construction'].some(id=>document.getElementById(id).value==='rails');
+          const rails=document.getElementById('top_construction').value==='rails'||(!document.getElementById('double_sided').checked&&document.getElementById('back_construction').value==='rails');
           if(rails) document.querySelector('input[name=construction][value=sides_full]').checked=true;
           for(const radio of document.querySelectorAll('input[name=construction]')) radio.disabled=rails;
           document.getElementById('rail_width').disabled=!rails;
-          document.getElementById('back').disabled=document.getElementById('back_construction').value==='rails';
+          document.getElementById('back').disabled=document.getElementById('double_sided').checked||document.getElementById('back_construction').value==='rails';
         }
         function updateDrawerHardware(){
           document.getElementById('drawer_height_limit').disabled=document.getElementById('drawer_height_mode').value!=='limit';
@@ -1701,7 +1857,7 @@ module KeroCabinet
         function removeOrganizerBin(i,s,j,index){const o=organizerAt(i,s,j);o.bins.splice(index,1);storeOrganizer(i,s,j,o);renderBays();}
         function addOrganizerBin(i,s,j){
           const o=organizerAt(i,s,j);if(o.bins.length>=64)return showError('Gridfinity supports up to 64 bins per drawer.');
-          const fit=organizerFits[`${i}:${s}:${j}`],cols=fit?.columns||12,rows=fit?.rows||12;
+          const fit=organizerFits[organizerKey(i,s,j)],cols=fit?.columns||12,rows=fit?.rows||12;
           for(let y=1;y<=rows;y++)for(let x=1;x<=cols;x++)if(!o.bins.some(b=>x>=b.x&&x<b.x+b.w&&y>=b.y&&y<b.y+b.d)){
             o.bins.push({x,y,w:1,d:1,h:Math.max(1,Math.min(3,fit?.max_height_units??3))});storeOrganizer(i,s,j,o);renderBays();return;
           }
@@ -1723,7 +1879,7 @@ module KeroCabinet
         }
         function organizerCards(item,i,s){
           return `<details class="help-details" ${item.organizers?.some(o=>o.type!=='none')?'open':''}><summary>Drawer organizers</summary><p class="hint">Drawer 1 is the bottom drawer. Each drawer can use a different organizer. Fit uses the actual box interior, including runner and stock deductions.</p>${Array.from({length:Math.min(8,Number(item.drawers)||1)},(_,j)=>{
-            const o=organizerAt(i,s,j),args=`${i},${s},${j}`,fit=organizerFits[`${i}:${s}:${j}`];
+            const o=organizerAt(i,s,j),args=`${i},${s},${j}`,fit=organizerFits[organizerKey(i,s,j)];
             const select=(key,label,options)=>`<div><label>${label}</label><select aria-label="${label}" onchange="changeOrganizer(${args},'${key}',this.value)">${options.map(([value,text])=>`<option value="${value}" ${o[key]===value?'selected':''}>${text}</option>`).join('')}</select></div>`;
             const field=(key,label,min,max,step=1,text=false)=>`<div><label>${label}</label><input aria-label="${label}" type="${text?'text':'number'}" ${text?'':`required min="${min}" max="${max}" step="${step}"`} value="${escapeHtml(o[key])}" onchange="changeOrganizer(${args},'${key}',this.value)"></div>`;
             return `<div class="stack-item"><strong>Drawer ${j+1} &middot; ${j===0?'bottom':j===Number(item.drawers)-1?'top':'middle'}</strong>${select('type','Organizer',[['none','None'],['panels','Panel dividers'],['gridfinity','Gridfinity']])}${o.type==='none'?'':`<div class="grid two">${field('clearance','Edge clearance (mm)',0,5,0.1)}${o.type==='panels'?`${select('layout','Panel layout',[['front_back','Front-to-back'],['side_side','Side-to-side'],['grid','Grid']])}${field('thickness','Divider thickness (mm)',3,18,0.1)}${field('material','Divider material',0,0,1,true)}${field('height','Divider height (0 = auto)',0,500,1)}${o.layout!=='side_side'?field('columns','Left-to-right ratios',0,0,1,true):''}${o.layout!=='front_back'?field('rows','Front-to-back ratios',0,0,1,true):''}`:select('align','Grid position',[['center','Center'],['front_left','Front left']])}</div>
@@ -1787,7 +1943,7 @@ module KeroCabinet
           index=event.key==='Home'?0:event.key==='End'?tabOrder.length-1:(index+(event.key==='ArrowRight'?1:-1)+tabOrder.length)%tabOrder.length;
           showTab(tabOrder[index]);document.getElementById('tab-'+tabOrder[index]).focus();
         });
-        const limits={caster_height:[35,400],caster_diameter:[20,250],caster_inset:[0,150],worktop_thickness:[6,100],worktop_front_overhang:[0,300],worktop_rear_overhang:[0,300],worktop_left_overhang:[0,300],worktop_right_overhang:[0,300],drawer_height_limit:[25,3000],drawer_rear_gap:[3,50],width:[300,5000],height:[350,3500],depth:[250,5000],panel:[9,36],back:[3,24],front:[9,32],toe:[0,250],timber_height:[20,200],timber_thickness:[10,100],frame_width:[25,90],frame_depth:[12,36],gap:[1,6],rail_width:[40,200],drawer_thickness:[6,30],drawer_bottom:[3,24]};
+        const limits={caster_height:[35,400],caster_diameter:[20,250],caster_inset:[0,150],worktop_thickness:[6,100],worktop_front_overhang:[0,300],worktop_rear_overhang:[0,300],worktop_left_overhang:[0,300],worktop_right_overhang:[0,300],drawer_height_limit:[25,3000],drawer_rear_gap:[3,50],width:[300,5000],height:[100,3500],depth:[250,5000],panel:[9,36],back:[3,24],front:[9,32],toe:[0,250],timber_height:[20,200],timber_thickness:[10,100],frame_width:[25,90],frame_depth:[12,36],gap:[1,6],rail_width:[40,200],drawer_thickness:[6,30],drawer_bottom:[3,24]};
         for(const [id,[min,max]] of Object.entries(limits)){const input=document.getElementById(id);input.min=min;input.max=max;input.required=true;input.title=`Allowed range: ${min}-${max} mm`;}
         document.addEventListener('wheel',event=>{if(document.activeElement?.type==='number')document.activeElement.blur();},{passive:true});
         function showError(message){
@@ -1813,7 +1969,10 @@ module KeroCabinet
           c.toe_frame=document.getElementById('toe_frame').checked;
           c.frame=document.getElementById('frame').checked;
           c.construction=document.querySelector('input[name=construction]:checked').value;
-          c.bays=JSON.parse(JSON.stringify(bays));
+          c.bays=JSON.parse(JSON.stringify(frontBays));
+          c.rear_bays=JSON.parse(JSON.stringify(rearBays));
+          c.double_sided=document.getElementById('double_sided').checked;
+          c.front_depth_share=Number(document.getElementById('front_depth_share').value);
           return c;
         }
         function submitConfig(){
@@ -1822,7 +1981,7 @@ module KeroCabinet
           window.sketchup.submit(JSON.stringify(c));
         }
         document.addEventListener('change',()=>{organizerFits={};organizerRevision++;renderBays();});
-        updateFrame();updateConstruction();updateDrawerHardware();updateWorktop();updateToeKick();renderBays();updateSummary();
+        updateAccess();updateFrame();updateConstruction();updateDrawerHardware();updateWorktop();updateToeKick();renderBays();updateSummary();
       </script>
       </body>
       </html>

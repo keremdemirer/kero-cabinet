@@ -35,6 +35,8 @@ jobs:
         run: ruby test/drawer_front_test.rb
       - name: Drawer box height tests
         run: ruby test/drawer_height_test.rb
+      - name: Double-sided cabinets
+        run: ruby test/double_sided_test.rb
       - name: Native cut list
         run: ruby test/native_cutlist_test.rb
       - name: Model migration
