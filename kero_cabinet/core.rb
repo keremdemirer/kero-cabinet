@@ -1,5 +1,5 @@
 # frozen_string_literal: true
-# Kero Cabinet v0.21.0, SketchUp 2020+; all design inputs use millimetres.
+# Kero Cabinet v0.21.1, SketchUp 2020+; all design inputs use millimetres.
 require 'sketchup.rb'
 require 'json'
 require_relative 'updater'
@@ -9,7 +9,7 @@ module KeroCabinet
 
   %i[DICT VERSION DEFAULT DRAWER_SLIDES].each { |name| remove_const(name) if const_defined?(name, false) }
   DICT = 'kero_cabinet'.freeze
-  VERSION = '0.21.0'.freeze
+  VERSION = '0.21.1'.freeze
 
   DEFAULT = {
     'name' => 'Parametric Cabinet',
@@ -1638,7 +1638,7 @@ module KeroCabinet
       </style>
       </head>
       <body>
-      <header class="editor-header"><div><h1>Kero Cabinet</h1><p>Design your cabinet. Fine-tune only what you need.</p></div><span class="version-tag">v0.21.0 &middot; mm</span></header>
+      <header class="editor-header"><div><h1>Kero Cabinet</h1><p>Design your cabinet. Fine-tune only what you need.</p></div><span class="version-tag">v0.21.1 &middot; mm</span></header>
       <p id="linked-notice" class="linked-notice" hidden></p>
       <nav class="editor-tabs" role="tablist" aria-label="Cabinet settings">
         <button id="tab-size" type="button" role="tab" data-tab="size" aria-controls="panel-size" aria-selected="true" onclick="showTab('size')">Size &amp; fronts</button>
@@ -2189,6 +2189,35 @@ module KeroCabinet
     {settings:settings,groups:groups,excluded:rows.reject { |row| row[:material].match?(/\bsheet\b/i) }.sum { |r| r[:quantity] }}
   end
 
+  def sheet_usage_summary(plan)
+    sheet_area=plan[:settings]['width']*plan[:settings]['length']
+    plan[:groups].group_by { |group| group[:thickness].to_f }.sort_by(&:first).map do |thickness,groups|
+      fitted_area=groups.sum { |group| group[:sheets].sum { |sheet| sheet[:pieces].sum { |piece| piece[:w]*piece[:h] } } }
+      missing_area=groups.sum { |group| group[:oversize].sum { |piece| piece[:w]*piece[:h] } }
+      sheets=groups.sum { |group| group[:sheets].length }
+      {thickness:thickness,materials:groups.map { |group| group[:material] }.uniq.sort,
+       pieces:groups.sum { |group| group[:pieces] },area_m2:(fitted_area+missing_area)/1_000_000.0,
+       sheets:sheets,not_fitted:groups.sum { |group| group[:oversize].length },
+       waste:sheets.zero? ? nil : 100*(1-fitted_area/(sheets*sheet_area))}
+    end
+  end
+
+  def sheet_usage_html(plan)
+    summary=sheet_usage_summary(plan)
+    return '' if summary.empty?
+    require 'cgi'
+    body=summary.map do |row|
+      cells=["#{cutlist_number(row[:thickness])} mm",row[:materials].join(' / '),row[:pieces],
+        format('%.3f',row[:area_m2]),row[:sheets],row[:waste] ? "#{format('%.1f',row[:waste])}%" : '-',row[:not_fitted]]
+      '<tr>'+cells.map { |cell| "<td>#{CGI.escapeHTML(cell.to_s)}</td>" }.join+'</tr>'
+    end.join
+    totals=[summary.sum { |r| r[:pieces] },summary.sum { |r| r[:area_m2] },summary.sum { |r| r[:sheets] },summary.sum { |r| r[:not_fitted] }]
+    <<~HTML
+      <h3>Usage by thickness</h3><table class="sheet-summary"><thead><tr><th>Thickness</th><th>Materials</th><th>Parts</th><th>Net area (m&sup2;)</th><th>Sheets</th><th>Waste</th><th>Not fitted</th></tr></thead><tbody>#{body}</tbody><tfoot><tr><th colspan="2">Total</th><th>#{totals[0]}</th><th>#{format('%.3f',totals[1])}</th><th>#{totals[2]}</th><th>-</th><th>#{totals[3]}</th></tr></tfoot></table>
+      <p class="note">Net area includes all requested sheet parts, including those not fitted. Sheet counts and waste cover fitted parts only. Materials remain packed separately; thickness totals do not combine their sheets. Timber is excluded.</p>
+    HTML
+  end
+
   def sheet_layout_html(plan)
     require 'cgi'
     escape=->(text) { CGI.escapeHTML(text.to_s) }
@@ -2196,6 +2225,7 @@ module KeroCabinet
     total=plan[:groups].sum { |g| g[:sheets].length }
     missing=plan[:groups].sum { |g| g[:oversize].length }
     html=String.new("<section><h2>Sheet layout</h2><p><strong>#{total} sheets#{missing>0 ? ' for fitting pieces only - INCOMPLETE' : ''}</strong> &middot; #{cutlist_number(settings['width'])} x #{cutlist_number(settings['length'])} mm &middot; kerf #{cutlist_number(settings['kerf'])} mm &middot; edge trim #{cutlist_number(settings['edge'])} mm &middot; rotation #{settings['rotate'] ? 'allowed' : 'off'}</p>")
+    html << sheet_usage_html(plan)
     html << '<p class="note">Guillotine placement heuristic; minimum sheet count is not guaranteed. Waste includes trim and kerf. Part labels refer to numbered cut-list rows. Rotation off aligns part Length with sheet Length; physical grain direction is not recorded. Non-sheet stock is excluded from sheet totals.</p>'
     html << "<p class=\"note\">#{plan[:excluded]} timber/non-sheet pieces remain in the cut list.</p>" if plan[:excluded]>0
     html << '<p>No sheet-material parts in this scope.</p>' if plan[:groups].empty?
@@ -2289,7 +2319,7 @@ module KeroCabinet
     end.join
     <<~HTML
       <!doctype html><html><head><meta charset="utf-8"><title>Kero Cabinet Cut List</title>
-      <style>body{font:14px -apple-system,Arial,sans-serif;color:#222;margin:24px;background:#f5f5f2}h1{font-size:24px;margin-bottom:8px}p{line-height:1.5}button{padding:10px 16px;cursor:pointer;margin:8px 8px 12px 0}table{width:100%;border-collapse:collapse;background:white}th,td{padding:10px;text-align:left;border-bottom:1px solid #ddd}th{background:#e5e8e1;position:sticky;top:0}.sheet-plan{background:white;padding:16px;margin:18px 0;break-inside:avoid;page-break-inside:avoid}.sheet-plan svg{display:block;width:100%;height:520px}.layout-error{color:#ae3429}td:nth-child(n+2):nth-child(-n+5){text-align:right;white-space:nowrap}.note{color:#555;font-size:12px}@media print{button{display:none}body{margin:0;background:white}th{position:static}}</style></head><body>
+      <style>body{font:14px -apple-system,Arial,sans-serif;color:#222;margin:24px;background:#f5f5f2}h1{font-size:24px;margin-bottom:8px}p{line-height:1.5}button{padding:10px 16px;cursor:pointer;margin:8px 8px 12px 0}table{width:100%;border-collapse:collapse;background:white}th,td{padding:10px;text-align:left;border-bottom:1px solid #ddd}th{background:#e5e8e1;position:sticky;top:0}.sheet-plan{background:white;padding:16px;margin:18px 0;break-inside:avoid;page-break-inside:avoid}.sheet-plan svg{display:block;width:100%;height:520px}.layout-error{color:#ae3429}.sheet-summary{font-size:12px}.sheet-summary td:nth-child(2){text-align:left;white-space:normal}.sheet-summary td:nth-child(n+3){text-align:right;white-space:nowrap}td:nth-child(n+2):nth-child(-n+5){text-align:right;white-space:nowrap}.note{color:#555;font-size:12px}@media print{button{display:none}body{margin:0;background:white}th{position:static}}</style></head><body>
       <h1>Cut list</h1><p>#{scope == :selected ? 'Selected Kero objects' : 'All Kero objects in this model'} &middot; #{count} pieces &middot; #{rows.length} sizes &middot; millimetres</p>
       <button onclick="window.sketchup.export_csv()">Save CSV...</button><button onclick="window.sketchup.print_report()">Print...</button><button onclick="window.sketchup.sheet_settings()">Change sheet settings...</button>
       <p class="note">Snapshot taken when the Cut list command started. Actual stock blank sizes; no edge banding deductions or physical grain metadata. Sheet layouts use the settings below. Hardware excluded. Length is the longest dimension. Hidden parts are included.</p>

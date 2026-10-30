@@ -2,7 +2,7 @@
 
 **A parametric cabinet builder for SketchUp.** Enter dimensions and a bay layout to create an editable cabinet component.
 
-Version: **v0.21.0 (early development)**. The original project reports use in SketchUp 2025. Automated tests use a mock SketchUp API; they are not runtime integration tests.
+Version: **v0.21.1 (early development)**. The original project reports use in SketchUp 2025. Automated tests use a mock SketchUp API; they are not runtime integration tests.
 
 ## Features
 
@@ -24,14 +24,14 @@ For advanced output, It targets **CutList v4.1.12** for the current workflow. Sc
 
 1. Download the RBZ from the `kero-cabinet-rbz` artifact of a successful GitHub Actions run, or build it locally.
 2. In SketchUp, open **Extensions > Extension Manager > Install Extension**.
-3. Select `Kero_Cabinet_v0.21.0.rbz` and restart SketchUp.
+3. Select `Kero_Cabinet_v0.21.1.rbz` and restart SketchUp.
 4. Choose **Extensions > Kero Cabinet > Create new cabinet...**.
 
 To edit a cabinet, select its component and choose **Kero Cabinet | Edit parameters** from the context menu, or **Edit selected cabinet...** from the extension menu.
 
 ## Updates from GitHub
 
-Install v0.21.0 once using the RBZ. Future releases can be installed from
+Install v0.21.1 once using the RBZ. Future releases can be installed from
 **Extensions > Kero Cabinet > Check for updates...**, without downloading or
 installing another RBZ manually. The plugin reloads automatically after an update. Apply or cancel any open cabinet
 editor changes before starting: editors close during reload. The model is not
@@ -375,6 +375,12 @@ edge trim per side and whether 90-degree rotation is allowed. Defaults are
 settings are remembered. Cancel closes the prompt without creating a report or
 changing the model. **Change sheet settings...** reopens it from an existing report.
 
+The Sheet layout header includes a Usage by thickness table: requested part count,
+net area in square metres, sheet count, waste and not-fitted count for each thickness.
+Different materials remain packed separately, and their sheet counts are summed.
+Net area includes requested oversized parts; sheet counts and waste include only
+fitted parts. This summary is also included in browser print/PDF output.
+
 The report retains the cut-list table and adds sheet counts, waste percentages
 and numbered SVG placements per material/thickness. Stock marked **Sheet** is
 packed separately for every material and actual thickness. Timber/non-sheet stock
@@ -601,7 +607,7 @@ python3 scripts/update_manifest.py --check
 bash scripts/build.sh
 ```
 
-Output: `dist/Kero_Cabinet_v0.21.0.rbz`.
+Output: `dist/Kero_Cabinet_v0.21.1.rbz`.
 
 CI checks text, Ruby syntax, 27 geometry configurations, and archive integrity on pushes and pull requests. Successful runs upload the installation package.
 

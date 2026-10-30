@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.21.1 - 2026-10-31
+- Add a Usage by thickness summary above sheet layouts, including materials, requested parts, net square metres, sheets, waste and not-fitted counts.
+- Preserve separate material packing and explicitly distinguish requested area from fitted-only sheet counts.
+- Include the summary in browser print/PDF output and verify cross-material totals and oversized parts.
+
 ## v0.21.0 - 2026-10-31
 - Ask for sheet width/length, kerf, edge trim and rotation in a separate screen before generating either cut-list scope.
 - Pack sheet parts by material/thickness with deterministic guillotine heuristics, preserving kerf/trim and flagging oversized pieces as incomplete.

@@ -93,4 +93,27 @@ class SheetLayoutTest < Minitest::Test
     assert_empty plan[:groups]
     assert_includes KeroCabinet.sheet_layout_html(plan),'No sheet-material parts'
   end
+  def test_usage_by_thickness_totals_preserve_material_separation_and_missing_area
+    rows=[row(500,500,4,'18 mm Sheet',18),row(500,500,1,'18 mm Plywood Sheet',18),
+      row(500,500,2,'12 mm Sheet',12),row(1100,1200,1,'18 mm Sheet',18),row(50,800,3,'Timber',50)]
+    plan=KeroCabinet.sheet_layout(rows,settings)
+    summary=KeroCabinet.sheet_usage_summary(plan)
+    assert_equal [12.0,18.0],summary.map { |r| r[:thickness] }
+    thick=summary.last
+    assert_equal 6,thick[:pieces]
+    assert_equal 2,thick[:sheets]
+    assert_equal 1,thick[:not_fitted]
+    assert_equal 2,thick[:materials].length
+    assert_in_delta 2.57,thick[:area_m2],1e-9
+    assert_in_delta 37.5,thick[:waste],1e-9
+    assert_equal plan[:groups].sum { |g| g[:sheets].length },summary.sum { |r| r[:sheets] }
+    html=KeroCabinet.cutlist_html(rows,:all,plan)
+    assert_operator html.index('Usage by thickness'),:<,html.index('Sheet 1 placement')
+    assert_includes html,'2.570'
+    assert_includes html,'Not fitted'
+    assert_includes html,'fitted parts only'
+    missing=KeroCabinet.sheet_layout([row(2000,3000)],settings)
+    assert_nil KeroCabinet.sheet_usage_summary(missing).first[:waste]
+  end
+
 end

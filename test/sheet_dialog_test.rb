@@ -42,6 +42,7 @@ class SheetDialogTest < Minitest::Test
     refute_same setup,report
     refute setup.visible?
     assert report.visible?
+    assert_includes report.html,'Usage by thickness'
     assert_includes report.html,'Sheet 1 placement'
     assert_includes report.html,'2 pieces'
     assert report.callbacks.key?('sheet_settings')
@@ -49,6 +50,7 @@ class SheetDialogTest < Minitest::Test
       Dir.stub(:tmpdir,directory) { report.callbacks['print_report'].call(nil) }
       path=URI::DEFAULT_PARSER.unescape(UI.opened_url.sub('file://',''))
       html=File.read(path)
+      assert_includes html,'Usage by thickness'
       assert_includes html,'Sheet 1 placement'
       assert_includes html,'window.print()'
       refute_includes html,'window.sketchup.'
