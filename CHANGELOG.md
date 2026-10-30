@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.22.1 - 2026-10-31
+- Encode sheet settings and price catalogs before writing native preferences, avoiding JSON quote re-evaluation failures observed in SketchUp.
+- Verify write success with immediate readback instead of silently claiming prices were remembered.
+- Read valid legacy records when modern records do not exist and retain legacy values.
+- Reproduce the quote-sensitive preference backend in regression tests and verify nested price records round-trip.
+
 ## v0.22.0 - 2026-10-31
 - Add per-material/thickness sheet prices and TRY/EUR/USD selection to the separate stock-settings screen.
 - Remember rates by material, thickness, physical stock size and currency, preserving inactive profiles and pending edits on successful generation.

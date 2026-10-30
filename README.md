@@ -2,7 +2,7 @@
 
 **A parametric cabinet builder for SketchUp.** Enter dimensions and a bay layout to create an editable cabinet component.
 
-Version: **v0.22.0 (early development)**. The original project reports use in SketchUp 2025. Automated tests use a mock SketchUp API; they are not runtime integration tests.
+Version: **v0.22.1 (early development)**. The original project reports use in SketchUp 2025. Automated tests use a mock SketchUp API; they are not runtime integration tests.
 
 ## Features
 
@@ -24,14 +24,14 @@ For advanced output, It targets **CutList v4.1.12** for the current workflow. Sc
 
 1. Download the RBZ from the `kero-cabinet-rbz` artifact of a successful GitHub Actions run, or build it locally.
 2. In SketchUp, open **Extensions > Extension Manager > Install Extension**.
-3. Select `Kero_Cabinet_v0.22.0.rbz` and restart SketchUp.
+3. Select `Kero_Cabinet_v0.22.1.rbz` and restart SketchUp.
 4. Choose **Extensions > Kero Cabinet > Create new cabinet...**.
 
 To edit a cabinet, select its component and choose **Kero Cabinet | Edit parameters** from the context menu, or **Edit selected cabinet...** from the extension menu.
 
 ## Updates from GitHub
 
-Install v0.22.0 once using the RBZ. Future releases can be installed from
+Install v0.22.1 once using the RBZ. Future releases can be installed from
 **Extensions > Kero Cabinet > Check for updates...**, without downloading or
 installing another RBZ manually. The plugin reloads automatically after an update. Apply or cancel any open cabinet
 editor changes before starting: editors close during reload. The model is not
@@ -420,6 +420,12 @@ is accepted as the decimal separator, without thousands separators. Blank means
 **Not priced**; an explicit `0` means free stock. Negative/non-numeric prices are
 rejected. Values are calculated in integer cents to avoid monetary rounding drift.
 
+From v0.22.1, JSON preference records are Base64-encoded before storage to avoid
+quote-sensitive native preference reads. Each write is checked by reading it back;
+a failed write/readback produces an explicit error. Valid legacy records are read
+when no new record exists. Unreadable old records may require entering prices once
+again; legacy records are retained. This encoding is not encryption.
+
 Successful report generation remembers prices in this SketchUp installation,
 keyed by material, thickness, sheet dimensions and currency. Swapping sheet width
 and length preserves the same stock price; changing physical size or currency
@@ -635,7 +641,7 @@ python3 scripts/update_manifest.py --check
 bash scripts/build.sh
 ```
 
-Output: `dist/Kero_Cabinet_v0.22.0.rbz`.
+Output: `dist/Kero_Cabinet_v0.22.1.rbz`.
 
 CI checks text, Ruby syntax, 27 geometry configurations, and archive integrity on pushes and pull requests. Successful runs upload the installation package.
 

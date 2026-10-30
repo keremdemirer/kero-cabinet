@@ -1,5 +1,5 @@
 # frozen_string_literal: true
-# Kero Cabinet v0.22.0, SketchUp 2020+; all design inputs use millimetres.
+# Kero Cabinet v0.22.1, SketchUp 2020+; all design inputs use millimetres.
 require 'sketchup.rb'
 require 'json'
 require_relative 'updater'
@@ -9,7 +9,7 @@ module KeroCabinet
 
   %i[DICT VERSION DEFAULT DRAWER_SLIDES].each { |name| remove_const(name) if const_defined?(name, false) }
   DICT = 'kero_cabinet'.freeze
-  VERSION = '0.22.0'.freeze
+  VERSION = '0.22.1'.freeze
 
   DEFAULT = {
     'name' => 'Parametric Cabinet',
@@ -1638,7 +1638,7 @@ module KeroCabinet
       </style>
       </head>
       <body>
-      <header class="editor-header"><div><h1>Kero Cabinet</h1><p>Design your cabinet. Fine-tune only what you need.</p></div><span class="version-tag">v0.22.0 &middot; mm</span></header>
+      <header class="editor-header"><div><h1>Kero Cabinet</h1><p>Design your cabinet. Fine-tune only what you need.</p></div><span class="version-tag">v0.22.1 &middot; mm</span></header>
       <p id="linked-notice" class="linked-notice" hidden></p>
       <nav class="editor-tabs" role="tablist" aria-label="Cabinet settings">
         <button id="tab-size" type="button" role="tab" data-tab="size" aria-controls="panel-size" aria-selected="true" onclick="showTab('size')">Size &amp; fronts</button>
@@ -2143,9 +2143,37 @@ module KeroCabinet
     end.uniq { |group| group[:key] }.sort_by { |group| [group[:thickness].to_f,group[:material]] }
   end
 
+  # Some SketchUp preference backends re-evaluate quoted strings on read.
+  # Base64 keeps serialized JSON quotes out of that native preference layer.
+  def read_sheet_record(key,legacy_key=nil)
+    raw=Sketchup.read_default('KeroCabinet',key,'')
+    unless raw.nil? || raw.to_s.empty?
+      raise ArgumentError,'Unrecognized sheet preference format.' unless raw.is_a?(String) && raw.start_with?('KCJSON1:')
+      return JSON.parse(Base64.strict_decode64(raw.delete_prefix('KCJSON1:')))
+    end
+    return nil unless legacy_key
+    begin
+      legacy=Sketchup.read_default('KeroCabinet',legacy_key,'')
+      return nil if legacy.nil? || legacy.to_s.empty?
+      JSON.parse(legacy)
+    rescue SyntaxError,StandardError
+      nil
+    end
+  end
+
+  def write_sheet_record(key,value)
+    encoded='KCJSON1:'+Base64.strict_encode64(JSON.generate(value))
+    success=Sketchup.write_default('KeroCabinet',key,encoded)
+    unless success && Sketchup.read_default('KeroCabinet',key,'')==encoded
+      raise ArgumentError,'Sheet preferences could not be saved. Prices have not been confirmed as remembered. Check SketchUp preference access and retry.'
+    end
+    value
+  end
+
   def read_sheet_price_catalog
-    value=JSON.parse(Sketchup.read_default('KeroCabinet','sheet_prices_v1','{}'))
-    return {} unless value.is_a?(Hash)
+    value=read_sheet_record('sheet_prices_v2','sheet_prices_v1')
+    return {} if value.nil?
+    raise ArgumentError,'Saved sheet price catalog is invalid.' unless value.is_a?(Hash)
     value.each_with_object({}) do |(key,price),catalog|
       next unless key.is_a?(String) && key.length<=500
       begin
@@ -2155,8 +2183,6 @@ module KeroCabinet
         next
       end
     end
-  rescue StandardError
-    {}
   end
 
   def save_sheet_price_catalog(rows,settings,catalog,edits={})
@@ -2186,7 +2212,7 @@ module KeroCabinet
       value=settings['prices'][group[:key]]
       value.nil? ? updated.delete(key) : updated[key]=value
     end
-    Sketchup.write_default('KeroCabinet','sheet_prices_v1',JSON.generate(updated))
+    write_sheet_record('sheet_prices_v2',updated)
     updated
   end
 
@@ -2401,12 +2427,8 @@ module KeroCabinet
   end
 
   def show_sheet_setup(rows,scope)
-    saved=Sketchup.read_default('KeroCabinet','sheet_settings','')
-    begin
-      initial=validate_sheet_settings(saved.to_s.empty? ? sheet_defaults : JSON.parse(saved))
-    rescue StandardError
-      initial=sheet_defaults
-    end
+    saved=read_sheet_record('sheet_settings_v2','sheet_settings')
+    initial=validate_sheet_settings(saved || sheet_defaults)
     catalog=read_sheet_price_catalog
     groups=sheet_price_groups(rows)
     @sheet_setup_dialog.close if @sheet_setup_dialog && @sheet_setup_dialog.visible?
@@ -2421,7 +2443,7 @@ module KeroCabinet
         settings=validate_sheet_settings(payload)
         plan=sheet_layout(rows,settings)
         save_sheet_price_catalog(rows,settings,catalog,edits)
-        Sketchup.write_default('KeroCabinet','sheet_settings',JSON.generate(settings))
+        write_sheet_record('sheet_settings_v2',settings)
         show_cutlist_report(rows,scope,plan)
         dialog.close
       rescue StandardError => e

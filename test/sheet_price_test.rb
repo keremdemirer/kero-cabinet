@@ -5,6 +5,7 @@ class SheetPriceTest < Minitest::Test
   def setup
     Sketchup.instance_variable_set(:@sheet_saved,nil)
     Sketchup.instance_variable_set(:@price_saved,nil)
+    Sketchup.instance_variable_set(:@preference_values,{})
     @rows=[{width:500,length:500,quantity:4,thickness:18,material:'18 mm Sheet',names:['Panel']},
       {width:500,length:500,quantity:1,thickness:18,material:'18 mm Plywood Sheet',names:['Other panel']}]
     @settings=KeroCabinet.sheet_defaults.merge('width'=>1000,'length'=>1000,'edge'=>0,'kerf'=>0)
@@ -83,4 +84,38 @@ class SheetPriceTest < Minitest::Test
       assert_includes html,'300.00'
     end
   end
+  def test_quote_sensitive_native_preference_backend_round_trips_encoded_records
+    storage={}
+    writer=lambda { |_section,key,value| storage[key]=value;true }
+    reader=lambda do |_section,key,fallback|
+      storage.key?(key) ? eval('"'+storage[key]+'"') : fallback
+    end
+    Sketchup.stub(:write_default,writer) do
+      Sketchup.stub(:read_default,reader) do
+        storage['sheet_settings']=JSON.generate(@settings)
+        assert_raises(SyntaxError) { Sketchup.read_default('KeroCabinet','sheet_settings','') }
+        assert_nil KeroCabinet.read_sheet_record('sheet_settings_v2','sheet_settings')
+        settings=KeroCabinet.validate_sheet_settings(@settings.merge('prices'=>{@key=>'1234.50'}))
+        KeroCabinet.save_sheet_price_catalog(@rows,settings,{})
+        KeroCabinet.write_sheet_record('sheet_settings_v2',settings)
+        assert_equal settings,KeroCabinet.read_sheet_record('sheet_settings_v2')
+        catalog=KeroCabinet.read_sheet_price_catalog
+        key=KeroCabinet.sheet_price_catalog_key('18 mm Sheet',18,settings)
+        assert_equal '1234.50',catalog[key]
+        assert storage['sheet_prices_v2'].start_with?('KCJSON1:')
+        refute_includes storage['sheet_prices_v2'],'"'
+      end
+    end
+  end
+  def test_failed_write_and_mismatched_readback_are_not_silent
+    Sketchup.stub(:write_default,false) do
+      assert_raises(ArgumentError) { KeroCabinet.write_sheet_record('sheet_prices_v2',{}) }
+    end
+    Sketchup.stub(:write_default,true) do
+      Sketchup.stub(:read_default,'') do
+        assert_raises(ArgumentError) { KeroCabinet.write_sheet_record('sheet_prices_v2',{}) }
+      end
+    end
+  end
+
 end
