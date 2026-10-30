@@ -5,7 +5,9 @@ const vm = require('vm');
 const assert = require('assert');
 const {execFileSync} = require('child_process');
 const root = path.resolve(__dirname, '..');
-const core = fs.readFileSync(path.join(root, 'kero_cabinet/core.rb'), 'utf8');
+const source = fs.readFileSync(path.join(root, 'kero_cabinet/core.rb'), 'utf8');
+const start = source.indexOf('  def dialog_html');
+const core = source.slice(start,source.indexOf('  unless file_loaded?',start));
 const output = execFileSync('ruby', ['-e', "require File.expand_path('./test/geometry_test.rb'); puts JSON.generate(KeroCabinet.clone_defaults)"], {cwd:root,encoding:'utf8'});
 const initial = JSON.parse(output.trim().split('\n').pop());
 let script = core.slice(core.indexOf('  def dialog_html')).match(/<script>([\s\S]*?)<\/script>/)[1].replace('/* INITIAL_CONFIG */ null', JSON.stringify(initial));
@@ -114,3 +116,16 @@ elements.height.value='100';context.submitConfig();assert.equal(submitted.height
 elements.double_sided.checked=false;context.updateAccess();context.submitConfig();
 assert.equal(submitted.double_sided,false);assert.equal(submitted.rear_bays[0].drawers,3);
 console.log('Independent front/rear layouts and 100 mm overall height are serialized correctly.');
+
+// Moving bay cards moves their entire configuration on the active face only.
+context.switchLayoutFace('front');
+const beforeMove=context.collectConfig();
+assert(beforeMove.bays.length>=2);
+context.moveBay(0,1);const afterMove=context.collectConfig();
+assert.deepStrictEqual(afterMove.bays[1],beforeMove.bays[0]);
+assert.deepStrictEqual(afterMove.bays[0],beforeMove.bays[1]);
+assert.deepStrictEqual(afterMove.rear_bays,beforeMove.rear_bays);
+context.moveBay(1,-1);assert.deepStrictEqual(context.collectConfig().bays,beforeMove.bays);
+context.moveBay(0,-1);assert.deepStrictEqual(context.collectConfig().bays,beforeMove.bays);
+assert(elements.bays.innerHTML.includes('Move bay up / left'));
+console.log('Bay Up/Down reorders complete layouts and preserves the other face.');

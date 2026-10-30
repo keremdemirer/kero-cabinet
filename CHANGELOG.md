@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.21.0 - 2026-10-31
+- Ask for sheet width/length, kerf, edge trim and rotation in a separate screen before generating either cut-list scope.
+- Pack sheet parts by material/thickness with deterministic guillotine heuristics, preserving kerf/trim and flagging oversized pieces as incomplete.
+- Show sheet counts, waste and numbered placement diagrams in reports and browser print/PDF views; retain CSV part export.
+- Remember successful settings and allow changing stock settings from the report.
+- Add Bay Up/Down controls that reorder complete active-face layouts without losing organizers or affecting the opposite face.
+- Verify packing invariants, settings/report/print callback flow and editor serialization.
+
 ## v0.20.0 - 2026-10-31
 - Add double-sided cabinets with independently editable front/rear layouts and separate drawer boxes.
 - Share the outer case, base and worktop; separate both faces with a case-stock center partition and adjustable 10-90% front depth share.

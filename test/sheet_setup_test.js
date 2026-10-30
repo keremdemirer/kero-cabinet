@@ -1,0 +1,12 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert'),{execFileSync}=require('child_process');
+const output=execFileSync('ruby',['-e',"require File.expand_path('./test/geometry_test.rb'); puts JSON.generate(KeroCabinet.sheet_setup_html(KeroCabinet.sheet_defaults))"],{encoding:'utf8'});
+const html=JSON.parse(output.trim().split('\n').pop());
+const fields={};let submit,request;
+for(const key of ['width','length','kerf','edge','rotate','error','sheet-form'])fields[key]={value:'',checked:false,textContent:'',addEventListener:(_event,handler)=>{submit=handler;}};
+const context=vm.createContext({document:{getElementById:key=>fields[key]},window:{sketchup:{generate_layout:raw=>{request=JSON.parse(raw);}}}});
+vm.runInContext(html.match(/<script>([\s\S]*?)<\/script>/)[1],context);
+assert.equal(fields.width.value,2100);assert.equal(fields.length.value,2800);assert(fields.rotate.checked);
+fields.width.value='1220';fields.length.value='2440';fields.kerf.value='3.2';fields.edge.value='5';fields.rotate.checked=false;
+submit({preventDefault(){}});assert.deepStrictEqual(request,{width:1220,length:2440,kerf:3.2,edge:5,rotate:false});
+context.sheetError('Invalid edge');assert.equal(fields.error.textContent,'Invalid edge');
+console.log('Separate sheet settings form initializes and submits all layout settings.');

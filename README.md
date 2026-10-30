@@ -2,7 +2,7 @@
 
 **A parametric cabinet builder for SketchUp.** Enter dimensions and a bay layout to create an editable cabinet component.
 
-Version: **v0.20.0 (early development)**. The original project reports use in SketchUp 2025. Automated tests use a mock SketchUp API; they are not runtime integration tests.
+Version: **v0.21.0 (early development)**. The original project reports use in SketchUp 2025. Automated tests use a mock SketchUp API; they are not runtime integration tests.
 
 ## Features
 
@@ -16,7 +16,7 @@ Version: **v0.20.0 (early development)**. The original project reports use in Sk
 - Full-width back panel applied outside the case
 - English interface, validation errors, generated part/material names, documentation, and tests
 
-The plugin includes a simple native cut list: use **Cut list from selection...** or **Cut list from all Kero objects...** in its menu. Both include only Kero-owned wood parts and independent worktops, merge matching material and blank sizes, and offer CSV and printing. The Print button opens a browser print view; use Print / Save as PDF there. Hardware is excluded; hidden parts are included. Selected groups are searched recursively. Each placed instance is counted, including linked copies. Sizes use actual geometry and parent scales; skewed geometry is rejected. This report does not include edge banding, grain direction or sheet nesting. Reports are snapshots; reopen after editing the model.
+The plugin includes a simple native cut list: use **Cut list from selection...** or **Cut list from all Kero objects...** in its menu. Both include only Kero-owned wood parts and independent worktops, merge matching material and blank sizes, and offer CSV and printing. The Print button opens a browser print view; use Print / Save as PDF there. Hardware is excluded; hidden parts are included. Selected groups are searched recursively. Each placed instance is counted, including linked copies. Sizes use actual geometry and parent scales; skewed geometry is rejected. This report does not include edge banding or physical grain metadata. Reports are snapshots; reopen after editing the model.
 
 For advanced output, It targets **CutList v4.1.12** for the current workflow. Scale-aware measurement and sheet classification have been checked with that extension's original code using mock SketchUp geometry. Full SketchUp UI/PDF output still needs runtime verification. OpenCutList is a different extension and has not been validated for this shared-stock workflow.
 
@@ -24,14 +24,14 @@ For advanced output, It targets **CutList v4.1.12** for the current workflow. Sc
 
 1. Download the RBZ from the `kero-cabinet-rbz` artifact of a successful GitHub Actions run, or build it locally.
 2. In SketchUp, open **Extensions > Extension Manager > Install Extension**.
-3. Select `Kero_Cabinet_v0.20.0.rbz` and restart SketchUp.
+3. Select `Kero_Cabinet_v0.21.0.rbz` and restart SketchUp.
 4. Choose **Extensions > Kero Cabinet > Create new cabinet...**.
 
 To edit a cabinet, select its component and choose **Kero Cabinet | Edit parameters** from the context menu, or **Edit selected cabinet...** from the extension menu.
 
 ## Updates from GitHub
 
-Install v0.20.0 once using the RBZ. Future releases can be installed from
+Install v0.21.0 once using the RBZ. Future releases can be installed from
 **Extensions > Kero Cabinet > Check for updates...**, without downloading or
 installing another RBZ manually. The plugin reloads automatically after an update. Apply or cancel any open cabinet
 editor changes before starting: editors close during reload. The model is not
@@ -366,6 +366,45 @@ The same command can be invoked from **Window > Ruby Console**:
 KeroCabinet.migrate_all_command
 ```
 
+## Sheet settings and stock layout
+
+Both **Cut list from selection...** and **Cut list from all Kero objects...** first
+open a separate **Sheet settings** screen. Enter sheet width/length, saw kerf,
+edge trim per side and whether 90-degree rotation is allowed. Defaults are
+2100 x 2800 mm, 3 mm kerf, 10 mm trim and rotation enabled. Last successful
+settings are remembered. Cancel closes the prompt without creating a report or
+changing the model. **Change sheet settings...** reopens it from an existing report.
+
+The report retains the cut-list table and adds sheet counts, waste percentages
+and numbered SVG placements per material/thickness. Stock marked **Sheet** is
+packed separately for every material and actual thickness. Timber/non-sheet stock
+stays in the part list but does not contribute to sheet totals. One stock size is
+used for all groups in a report. Part labels refer to numbered table rows; **R**
+means rotated. Sheet count is based on actual rectangles, not total area alone.
+
+The deterministic guillotine heuristic tries two ordering and two splitting
+strategies, reserves kerf between parts and trim around the sheet, and chooses
+the result using the fewest sheets. It does not guarantee an optimal minimum.
+Waste includes trim, kerf and remaining offcuts. Oversized parts are explicitly
+listed as not fitted and excluded from the count, which is marked **INCOMPLETE**.
+Correct stock/settings before treating that result as a complete buying list.
+Reports above 10000 sheet pieces require a smaller selected-object batch.
+
+Cut-list dimensions are sorted blank dimensions. With rotation off, part Length
+aligns to sheet Length; this does not recover physical grain direction. Layouts
+are blank placement plans, not CNC toolpaths or edge-banding/half-lap machining
+instructions. The model is not regenerated or changed by reporting.
+
+**Print...** opens the full part table and sheet diagrams in the browser for
+printing or saving PDF. **Save CSV...** continues to export the part table.
+The report is a snapshot taken when its Cut list command started; reopen it after
+model edits. Browser printing still requires runtime verification in SketchUp.
+
+Bay cards now have **Up / Down** buttons. Moving a card changes its left-to-right
+bay position, carrying its dimensions, contents, mixed sections and organizers.
+On double-sided cabinets this changes only the active Front/Rear layout. The
+first/last unavailable moves are disabled.
+
 ## Double-sided cabinets
 
 Enable **Layout > Cabinet access > Double-sided cabinet**. Choose **Edit layout:
@@ -547,6 +586,9 @@ ruby test/interior_view_test.rb
 ruby test/migration_test.rb
 ruby test/double_sided_test.rb
 ruby test/native_cutlist_test.rb
+ruby test/sheet_layout_test.rb
+ruby test/sheet_dialog_test.rb
+node test/sheet_setup_test.js
 ruby test/reload_test.rb
 ruby test/stock_test.rb
 ruby test/worktop_test.rb
@@ -559,7 +601,7 @@ python3 scripts/update_manifest.py --check
 bash scripts/build.sh
 ```
 
-Output: `dist/Kero_Cabinet_v0.20.0.rbz`.
+Output: `dist/Kero_Cabinet_v0.21.0.rbz`.
 
 CI checks text, Ruby syntax, 27 geometry configurations, and archive integrity on pushes and pull requests. Successful runs upload the installation package.
 

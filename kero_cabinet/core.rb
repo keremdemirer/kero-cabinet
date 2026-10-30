@@ -1,5 +1,5 @@
 # frozen_string_literal: true
-# Kero Cabinet v0.20.0, SketchUp 2020+; all design inputs use millimetres.
+# Kero Cabinet v0.21.0, SketchUp 2020+; all design inputs use millimetres.
 require 'sketchup.rb'
 require 'json'
 require_relative 'updater'
@@ -9,7 +9,7 @@ module KeroCabinet
 
   %i[DICT VERSION DEFAULT DRAWER_SLIDES].each { |name| remove_const(name) if const_defined?(name, false) }
   DICT = 'kero_cabinet'.freeze
-  VERSION = '0.20.0'.freeze
+  VERSION = '0.21.0'.freeze
 
   DEFAULT = {
     'name' => 'Parametric Cabinet',
@@ -1638,7 +1638,7 @@ module KeroCabinet
       </style>
       </head>
       <body>
-      <header class="editor-header"><div><h1>Kero Cabinet</h1><p>Design your cabinet. Fine-tune only what you need.</p></div><span class="version-tag">v0.20.0 &middot; mm</span></header>
+      <header class="editor-header"><div><h1>Kero Cabinet</h1><p>Design your cabinet. Fine-tune only what you need.</p></div><span class="version-tag">v0.21.0 &middot; mm</span></header>
       <p id="linked-notice" class="linked-notice" hidden></p>
       <nav class="editor-tabs" role="tablist" aria-label="Cabinet settings">
         <button id="tab-size" type="button" role="tab" data-tab="size" aria-controls="panel-size" aria-selected="true" onclick="showTab('size')">Size &amp; fronts</button>
@@ -1821,6 +1821,7 @@ module KeroCabinet
           if(bays.length>=6) return showError('You can add up to 6 bays.');
           bays.push({kind:'door',weight:1,doors:1,drawers:4,shelves:1}); renderBays();
         }
+        function moveBay(i,direction){const target=i+direction;if(target<0||target>=bays.length)return;[bays[i],bays[target]]=[bays[target],bays[i]];organizerFits={};organizerRevision++;renderBays();}
         function removeBay(i){ if(bays.length>1){bays.splice(i,1);renderBays();} }
         function newSection(kind='door',weight=1){return {kind,weight,doors:1,drawers:1,shelves:1};}
         function changeBay(i,key,value){
@@ -1910,7 +1911,7 @@ module KeroCabinet
         }
         function renderBays(){
           const total=bays.reduce((sum,bay)=>sum+(Number(bay.weight)||0),0)||1;
-          document.getElementById('bays').innerHTML=bays.map((b,i)=>`<div class="bay"><div class="bayhead"><div>Bay ${i+1}<div class="bay-subtitle">${bays.length===1?'Full cabinet width':i===0?'Left':i===bays.length-1?'Right':'Middle'} &middot; ${Math.round((Number(b.weight)||0)*100/total)}% of width</div></div><button class="ghost remove" onclick="removeBay(${i})" type="button" ${bays.length<=1?'disabled':''}>Remove bay</button></div>
+          document.getElementById('bays').innerHTML=bays.map((b,i)=>`<div class="bay"><div class="bayhead"><div>Bay ${i+1}<div class="bay-subtitle">${bays.length===1?'Full cabinet width':i===0?'Left':i===bays.length-1?'Right':'Middle'} &middot; ${Math.round((Number(b.weight)||0)*100/total)}% of width</div></div><div class="stack-actions"><button type="button" aria-label="Move bay up / left" title="Move up / left" onclick="moveBay(${i},-1)" ${i===0?'disabled':''}>&uarr;</button><button type="button" aria-label="Move bay down / right" title="Move down / right" onclick="moveBay(${i},1)" ${i===bays.length-1?'disabled':''}>&darr;</button><button class="ghost remove" onclick="removeBay(${i})" type="button" ${bays.length<=1?'disabled':''}>Remove bay</button></div></div>
             ${typePicker(b.kind,`changeBay(${i},'kind','VALUE')`,true)}
             ${bays.length>1?`<div class="bay-width"><label>Width ratio</label><input type="number" aria-label="Bay width ratio" required min="0.2" max="10" step="0.1" value="${escapeHtml(b.weight)}" onchange="changeBay(${i},'weight',this.value);refreshLayout()"><span>Equal values give equal widths.</span></div>`:''}
             ${b.kind==='stack'?renderSections(b,i):`<div class="stack-grid">${counts(b,`changeBay(${i},'KEY',this.value)`)}</div>${b.kind==='drawer'?organizerCards(b,i,-1):''}<p class="hint">Need drawers below doors? Choose Mixed layout above.</p>`}</div>`).join('');
@@ -2107,6 +2108,159 @@ module KeroCabinet
     grouped.values.sort_by { |row| [row[:material], row[:thickness], -row[:length], -row[:width]] }
   end
 
+  def sheet_defaults
+    {'width'=>2100.0,'length'=>2800.0,'kerf'=>3.0,'edge'=>10.0,'rotate'=>true}
+  end
+
+  def validate_sheet_settings(source)
+    raise ArgumentError,'Invalid sheet settings.' unless source.is_a?(Hash)
+    settings=sheet_defaults.merge(source)
+    {'width'=>[100,10000],'length'=>[100,10000],'kerf'=>[0,20],'edge'=>[0,100]}.each do |key,(low,high)|
+      number_between!(settings,key,low,high)
+    end
+    unless [true,false].include?(settings['rotate'])
+      raise ArgumentError,'Choose whether 90-degree rotation is allowed.'
+    end
+    if [settings['width'],settings['length']].min-2*settings['edge']<10
+      raise ArgumentError,'Edge trim leaves less than 10 mm of usable sheet space.'
+    end
+    settings
+  end
+
+  # Non-overlapping guillotine rectangles. Kerf is reserved on the waste side.
+  def pack_sheet_pieces(pieces,settings,order,split)
+    w,h=settings['width']-2*settings['edge'],settings['length']-2*settings['edge']
+    sorted=pieces.sort_by { |p| order==:area ? [-p[:w]*p[:h],-[p[:w],p[:h]].max,p[:id]] : [-[p[:w],p[:h]].max,-p[:w]*p[:h],p[:id]] }
+    sheets=[]
+    sorted.each do |piece|
+      options=[[piece[:w],piece[:h],false]]
+      options << [piece[:h],piece[:w],true] if settings['rotate'] && piece[:w]!=piece[:h]
+      choices=[]
+      sheets.each_with_index do |sheet,si|
+        sheet[:free].each_with_index do |rect,ri|
+          options.each do |pw,ph,rotated|
+            next if pw>rect[:w]+1e-7 || ph>rect[:h]+1e-7
+            score=[[rect[:w]-pw,rect[:h]-ph].min,rect[:w]*rect[:h]-pw*ph,si,ri,rotated ? 1 : 0]
+            choices << [score,si,ri,pw,ph,rotated]
+          end
+        end
+      end
+      if choices.empty?
+        sheets << {free:[{x:0.0,y:0.0,w:w,h:h}],pieces:[]}
+        pw,ph,rotated=options.find { |a,b,_| a<=w+1e-7 && b<=h+1e-7 }
+        choice=[nil,sheets.length-1,0,pw,ph,rotated]
+      else
+        choice=choices.min_by(&:first)
+      end
+      _,si,ri,pw,ph,rotated=choice
+      sheet=sheets[si]
+      rect=sheet[:free].delete_at(ri)
+      sheet[:pieces] << piece.merge(x:rect[:x]+settings['edge'],y:rect[:y]+settings['edge'],w:pw,h:ph,rotated:rotated)
+      rw,rh=rect[:w]-pw-settings['kerf'],rect[:h]-ph-settings['kerf']
+      leftovers=if split==:vertical
+        [{x:rect[:x]+pw+settings['kerf'],y:rect[:y],w:rw,h:rect[:h]},
+         {x:rect[:x],y:rect[:y]+ph+settings['kerf'],w:pw,h:rh}]
+      else
+        [{x:rect[:x]+pw+settings['kerf'],y:rect[:y],w:rw,h:ph},
+         {x:rect[:x],y:rect[:y]+ph+settings['kerf'],w:rect[:w],h:rh}]
+      end
+      sheet[:free].concat(leftovers.select { |r| r[:w]>1e-7 && r[:h]>1e-7 })
+    end
+    sheets
+  end
+
+  def sheet_layout(rows,source)
+    settings=validate_sheet_settings(source)
+    sheet_rows=rows.each_with_index.select { |row,_index| row[:material].match?(/\bsheet\b/i) }
+    count=sheet_rows.sum { |row,_| row[:quantity] }
+    raise ArgumentError,'More than 10000 sheet parts. Generate a selected-object report in smaller batches.' if count>10000
+    groups=sheet_rows.group_by { |row,_| [row[:material],row[:thickness]] }.map do |(material,thickness),entries|
+      pieces=entries.flat_map do |row,index|
+        Array.new(row[:quantity]) { |copy| {id:"#{index+1}.#{copy+1}",row:index+1,w:row[:width],h:row[:length]} }
+      end
+      uw,uh=settings['width']-2*settings['edge'],settings['length']-2*settings['edge']
+      fits,oversize=pieces.partition { |p| (p[:w]<=uw+1e-7 && p[:h]<=uh+1e-7) || (settings['rotate'] && p[:h]<=uw+1e-7 && p[:w]<=uh+1e-7) }
+      candidates=[:area,:longest].product([:vertical,:horizontal]).map { |order,split| pack_sheet_pieces(fits,settings,order,split) }
+      sheets=candidates.min_by { |list| [list.length,list.sum { |sheet| sheet[:free].length }] }
+      area=fits.sum { |p| p[:w]*p[:h] }
+      waste=sheets.empty? ? 0.0 : 100*(1-area/(sheets.length*settings['width']*settings['length']))
+      {material:material,thickness:thickness,sheets:sheets,oversize:oversize,waste:waste,pieces:pieces.length}
+    end
+    {settings:settings,groups:groups,excluded:rows.reject { |row| row[:material].match?(/\bsheet\b/i) }.sum { |r| r[:quantity] }}
+  end
+
+  def sheet_layout_html(plan)
+    require 'cgi'
+    escape=->(text) { CGI.escapeHTML(text.to_s) }
+    settings=plan[:settings]
+    total=plan[:groups].sum { |g| g[:sheets].length }
+    missing=plan[:groups].sum { |g| g[:oversize].length }
+    html=String.new("<section><h2>Sheet layout</h2><p><strong>#{total} sheets#{missing>0 ? ' for fitting pieces only - INCOMPLETE' : ''}</strong> &middot; #{cutlist_number(settings['width'])} x #{cutlist_number(settings['length'])} mm &middot; kerf #{cutlist_number(settings['kerf'])} mm &middot; edge trim #{cutlist_number(settings['edge'])} mm &middot; rotation #{settings['rotate'] ? 'allowed' : 'off'}</p>")
+    html << '<p class="note">Guillotine placement heuristic; minimum sheet count is not guaranteed. Waste includes trim and kerf. Part labels refer to numbered cut-list rows. Rotation off aligns part Length with sheet Length; physical grain direction is not recorded. Non-sheet stock is excluded from sheet totals.</p>'
+    html << "<p class=\"note\">#{plan[:excluded]} timber/non-sheet pieces remain in the cut list.</p>" if plan[:excluded]>0
+    html << '<p>No sheet-material parts in this scope.</p>' if plan[:groups].empty?
+    plan[:groups].each do |group|
+      html << "<h3>#{escape.call(group[:material])} - #{cutlist_number(group[:thickness])} mm: #{group[:sheets].length} sheets / #{format('%.1f',group[:waste])}% waste for fitted parts</h3>"
+      unless group[:oversize].empty?
+        labels=group[:oversize].group_by { |p| p[:row] }.map { |row,parts| "Row #{row}: #{parts.length} pieces" }.join('; ')
+        html << "<p class=\"layout-error\"><strong>Does not fit usable stock: #{escape.call(labels)}.</strong> Increase stock size, reduce edge trim or enable rotation. These pieces are NOT included in the sheet count.</p>"
+      end
+      group[:sheets].each_with_index do |sheet,index|
+        w,h=settings['width'],settings['length']
+        html << "<div class=\"sheet-plan\"><h4>Sheet #{index+1} - #{sheet[:pieces].length} pieces</h4><svg viewBox=\"-5 -5 #{w+10} #{h+10}\" role=\"img\" aria-label=\"Sheet #{index+1} placement\"><rect width=\"#{w}\" height=\"#{h}\" fill=\"#eee9df\" stroke=\"#444\" stroke-width=\"2\"/><rect x=\"#{settings['edge']}\" y=\"#{settings['edge']}\" width=\"#{w-2*settings['edge']}\" height=\"#{h-2*settings['edge']}\" fill=\"none\" stroke=\"#aaa\" stroke-dasharray=\"8 8\"/>"
+        sheet[:pieces].each do |piece|
+          label="#{piece[:row]}#{piece[:rotated] ? ' R' : ''}"
+          font=[[piece[:w],piece[:h]].min*0.4,[w,h].max/65.0].min
+          html << "<g><title>#{escape.call(piece[:id])}: #{cutlist_number(piece[:w])} x #{cutlist_number(piece[:h])} mm</title><rect x=\"#{piece[:x]}\" y=\"#{piece[:y]}\" width=\"#{piece[:w]}\" height=\"#{piece[:h]}\" fill=\"#cbdcc3\" stroke=\"#355e40\" stroke-width=\"1\"/><text x=\"#{piece[:x]+piece[:w]/2}\" y=\"#{piece[:y]+piece[:h]/2}\" text-anchor=\"middle\" dominant-baseline=\"middle\" font-size=\"#{font}\">#{label}</text></g>"
+        end
+        html << '</svg><p class="note">R = rotated 90 degrees. Placements are blank sizes, not CNC toolpaths.</p></div>'
+      end
+    end
+    html+'</section>'
+  end
+
+  def sheet_setup_html(initial)
+    values=JSON.generate(initial).gsub('</','<\\/')
+    <<~HTML
+      <!doctype html><html lang="en"><head><meta charset="utf-8"><style>body{font:14px -apple-system,Arial,sans-serif;padding:22px;background:#f5f6f1;color:#253b30}h1{font-size:21px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}label{display:block;font-size:12px;margin:6px 0}input[type=number]{box-sizing:border-box;width:100%;padding:10px;border:1px solid #bdcbb7;border-radius:6px}button{padding:12px;background:#355e40;color:white;border:0;border-radius:6px;margin-top:18px;cursor:pointer}p{font-size:12px;line-height:1.5;color:#65705e}#error{color:#ae3429}</style></head><body>
+      <h1>Sheet settings</h1><p>Set stock size before generating the cut list. These dimensions apply separately to each sheet material and thickness. Timber stays in the list but is excluded from sheet counts.</p>
+      <form id="sheet-form"><div class="grid"><div><label for="width">Sheet width (mm)</label><input id="width" type="number" min="100" max="10000" step="any" required></div><div><label for="length">Sheet length (mm)</label><input id="length" type="number" min="100" max="10000" step="any" required></div><div><label for="kerf">Saw kerf (mm)</label><input id="kerf" type="number" min="0" max="20" step="any" required></div><div><label for="edge">Edge trim per side (mm)</label><input id="edge" type="number" min="0" max="100" step="any" required></div></div>
+      <label><input id="rotate" type="checkbox"> Allow 90-degree rotation</label><p>Rotation off keeps cut-list Length along sheet Length; grain metadata is not stored. The layout is a placement estimate and may use more sheets than an optimal solution.</p><p id="error" role="alert"></p><button type="submit">Generate cut list and layout</button> <button type="button" onclick="window.sketchup.cancel_setup()">Cancel</button></form>
+      <script>const initial=#{values};for(const key of ['width','length','kerf','edge'])document.getElementById(key).value=initial[key];document.getElementById('rotate').checked=initial.rotate;
+      document.getElementById('sheet-form').addEventListener('submit',event=>{event.preventDefault();const data={};for(const key of ['width','length','kerf','edge'])data[key]=Number(document.getElementById(key).value);data.rotate=document.getElementById('rotate').checked;window.sketchup.generate_layout(JSON.stringify(data));});
+      function sheetError(message){document.getElementById('error').textContent=message;}</script></body></html>
+    HTML
+  end
+
+  def show_sheet_setup(rows,scope)
+    saved=Sketchup.read_default('KeroCabinet','sheet_settings','')
+    begin
+      initial=validate_sheet_settings(saved.to_s.empty? ? sheet_defaults : JSON.parse(saved))
+    rescue StandardError
+      initial=sheet_defaults
+    end
+    @sheet_setup_dialog.close if @sheet_setup_dialog && @sheet_setup_dialog.visible?
+    dialog=UI::HtmlDialog.new(dialog_title:'Kero Cabinet | Sheet settings',preferences_key:'KeroCabinet.SheetSettings',scrollable:true,resizable:true,width:490,height:590,style:UI::HtmlDialog::STYLE_DIALOG)
+    @sheet_setup_dialog=dialog
+    dialog.set_html(sheet_setup_html(initial))
+    dialog.add_action_callback('cancel_setup') { |_context| dialog.close }
+    dialog.add_action_callback('generate_layout') do |_context,raw|
+      begin
+        settings=validate_sheet_settings(JSON.parse(raw))
+        plan=sheet_layout(rows,settings)
+        Sketchup.write_default('KeroCabinet','sheet_settings',JSON.generate(settings))
+        show_cutlist_report(rows,scope,plan)
+        dialog.close
+      rescue StandardError => e
+        dialog.execute_script("sheetError(#{JSON.generate(e.message)})")
+      end
+    end
+    @dialogs ||= []
+    @dialogs << dialog
+    dialog.set_on_closed { @dialogs.delete(dialog) }
+    dialog.show
+  end
+
   def cutlist_number(value)
     format('%.3f', value).sub(/\.?0+\z/, '')
   end
@@ -2125,34 +2279,41 @@ module KeroCabinet
     end
   end
 
-  def cutlist_html(rows, scope)
+  def cutlist_html(rows, scope, layout=nil)
     require 'cgi'
     escape = ->(value) { CGI.escapeHTML(value.to_s) }
     count = rows.sum { |row| row[:quantity] }
-    body = rows.map do |row|
-      cells = [row[:names].join(' / '), row[:quantity], cutlist_number(row[:length]), cutlist_number(row[:width]), cutlist_number(row[:thickness]), row[:material]]
+    body = rows.each_with_index.map do |row,index|
+      cells = ["#{index+1}. #{row[:names].join(' / ')}", row[:quantity], cutlist_number(row[:length]), cutlist_number(row[:width]), cutlist_number(row[:thickness]), row[:material]]
       '<tr>' + cells.map { |value| "<td>#{escape.call(value)}</td>" }.join + '</tr>'
     end.join
     <<~HTML
       <!doctype html><html><head><meta charset="utf-8"><title>Kero Cabinet Cut List</title>
-      <style>body{font:14px -apple-system,Arial,sans-serif;color:#222;margin:24px;background:#f5f5f2}h1{font-size:24px;margin-bottom:8px}p{line-height:1.5}button{padding:10px 16px;cursor:pointer;margin:8px 8px 12px 0}table{width:100%;border-collapse:collapse;background:white}th,td{padding:10px;text-align:left;border-bottom:1px solid #ddd}th{background:#e5e8e1;position:sticky;top:0}td:nth-child(n+2):nth-child(-n+5){text-align:right;white-space:nowrap}.note{color:#555;font-size:12px}@media print{button{display:none}body{margin:0;background:white}th{position:static}}</style></head><body>
+      <style>body{font:14px -apple-system,Arial,sans-serif;color:#222;margin:24px;background:#f5f5f2}h1{font-size:24px;margin-bottom:8px}p{line-height:1.5}button{padding:10px 16px;cursor:pointer;margin:8px 8px 12px 0}table{width:100%;border-collapse:collapse;background:white}th,td{padding:10px;text-align:left;border-bottom:1px solid #ddd}th{background:#e5e8e1;position:sticky;top:0}.sheet-plan{background:white;padding:16px;margin:18px 0;break-inside:avoid;page-break-inside:avoid}.sheet-plan svg{display:block;width:100%;height:520px}.layout-error{color:#ae3429}td:nth-child(n+2):nth-child(-n+5){text-align:right;white-space:nowrap}.note{color:#555;font-size:12px}@media print{button{display:none}body{margin:0;background:white}th{position:static}}</style></head><body>
       <h1>Cut list</h1><p>#{scope == :selected ? 'Selected Kero objects' : 'All Kero objects in this model'} &middot; #{count} pieces &middot; #{rows.length} sizes &middot; millimetres</p>
-      <button onclick="window.sketchup.export_csv()">Save CSV...</button><button onclick="window.sketchup.print_report()">Print...</button>
-      <p class="note">Snapshot at opening. Actual stock blank sizes; no edge banding deductions, grain direction or sheet nesting. Hardware excluded. Length is the longest dimension. Hidden parts are included.</p>
-      <table><thead><tr><th>Part names</th><th>Qty</th><th>Length</th><th>Width</th><th>Thickness</th><th>Material</th></tr></thead><tbody>#{body}</tbody></table></body></html>
+      <button onclick="window.sketchup.export_csv()">Save CSV...</button><button onclick="window.sketchup.print_report()">Print...</button><button onclick="window.sketchup.sheet_settings()">Change sheet settings...</button>
+      <p class="note">Snapshot taken when the Cut list command started. Actual stock blank sizes; no edge banding deductions or physical grain metadata. Sheet layouts use the settings below. Hardware excluded. Length is the longest dimension. Hidden parts are included.</p>
+      <table><thead><tr><th>Part names</th><th>Qty</th><th>Length</th><th>Width</th><th>Thickness</th><th>Material</th></tr></thead><tbody>#{body}</tbody></table>#{layout ? sheet_layout_html(layout) : ''}</body></html>
     HTML
   end
 
   def show_cutlist(scope)
     rows = cutlist_rows(scope)
     return UI.messagebox('No Kero Cabinet wood parts found in this scope.') if rows.empty?
+    show_sheet_setup(rows,scope)
+  rescue StandardError => error
+    UI.messagebox("Could not create cut list: #{error.message}")
+  end
+
+  def show_cutlist_report(rows,scope,layout)
     @cutlist_dialog.close if @cutlist_dialog && @cutlist_dialog.visible?
     dialog = UI::HtmlDialog.new(dialog_title: 'Kero Cabinet | Cut list', preferences_key: 'KeroCabinetCutList', scrollable: true, resizable: true, width: 1000, height: 650, style: UI::HtmlDialog::STYLE_DIALOG)
     @cutlist_dialog = dialog
     @dialogs ||= []
     @dialogs << dialog
     dialog.set_on_closed { @dialogs.delete(dialog) }
-    dialog.set_html(cutlist_html(rows, scope))
+    dialog.set_html(cutlist_html(rows, scope, layout))
+    dialog.add_action_callback('sheet_settings') { |_context| show_sheet_setup(rows,scope) }
     dialog.add_action_callback('export_csv') do |_context|
       begin
         path = UI.savepanel('Save cut list CSV', nil, 'Kero_Cabinet_Cut_List.csv')
@@ -2168,8 +2329,9 @@ module KeroCabinet
         require 'tmpdir'
         require 'securerandom'
         require 'uri'
-        printable = cutlist_html(rows, scope)
+        printable = cutlist_html(rows, scope, layout)
           .sub('<button onclick="window.sketchup.export_csv()">Save CSV...</button>', '')
+          .sub('<button onclick="window.sketchup.sheet_settings()">Change sheet settings...</button>', '')
           .sub('window.sketchup.print_report()', 'window.print()')
         path = File.join(Dir.tmpdir, "kero-cutlist-#{SecureRandom.hex(8)}.html")
         File.write(path, printable, encoding: 'UTF-8')
